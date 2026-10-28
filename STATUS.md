@@ -6,9 +6,10 @@
 - Gate A on-device: music audible on the Huawei tablet (Francesco, by ear). applicationId `be.grunt.slowpage`.
 
 ## In progress
-- Gate A Codex review (requested from PMO).
+- Gate A Codex round 1 answered (`audit/gate-a/round-1-claude.md`, fixes in 8c651ea); waiting for the re-check.
 
 ## Blocked
+- Render path not lock- or allocation-free: the fix is upstream (hushhour-ipad / hushhour-core), requested through PMO.
 - Sample-rate logcat evidence: needs the tablet attached to this Mac.
 
 ## Next
