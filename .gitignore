@@ -1,0 +1,8 @@
+build/
+rust-out/
+.gradle/
+app/build/
+local.properties
+.idea/
+*.iml
+app/.cxx/

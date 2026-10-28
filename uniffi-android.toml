@@ -1,0 +1,8 @@
+# Kotlin bindings config for hushhour-ipad, passed to uniffi-bindgen by scripts/build-rust.sh
+# (UniFFI 0.32 global config format). It changes only the generated Kotlin, never the crate.
+[crates.hushhour_ipad.bindings.kotlin]
+android = true
+
+# `HighlightError::Failed { message }` clashes with Throwable.message in Kotlin.
+[crates.hushhour_ipad.bindings.kotlin.rename]
+"HighlightError.Failed.message" = "detail"
