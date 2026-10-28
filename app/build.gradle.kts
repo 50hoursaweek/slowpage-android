@@ -12,7 +12,7 @@ android {
     ndkVersion = "29.0.14206865"
 
     defaultConfig {
-        applicationId = "com.fiftyhoursaweek.slowpage"
+        applicationId = "be.grunt.slowpage"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
