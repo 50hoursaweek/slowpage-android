@@ -8,6 +8,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.TextView
+import java.io.File
+import java.security.MessageDigest
 import uniffi.hushhour.AudioEngine
 import uniffi.hushhour.MusicChoice
 import kotlin.concurrent.thread
@@ -21,6 +23,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private val handler = Handler(Looper.getMainLooper())
     private var started = false
+    private var generation = 0
     private var lines = listOf<String>()
 
     private val tick = object : Runnable {
@@ -41,32 +44,68 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         status = TextView(this).apply { setPadding(48, 48, 48, 48); textSize = 16f }
         setContentView(status)
+        logApkHash()
+    }
+
+    /** Ties logcat evidence to the installed build: the SHA-256 of this APK file. */
+    private fun logApkHash() {
+        val apk = File(applicationInfo.sourceDir)
+        thread(name = "gate-a-apk-hash") {
+            val digest = MessageDigest.getInstance("SHA-256")
+            apk.inputStream().use { input ->
+                val buffer = ByteArray(1 shl 16)
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    digest.update(buffer, 0, n)
+                }
+            }
+            val hex = digest.digest().joinToString("") { "%02x".format(it) }
+            val version = packageManager.getPackageInfo(packageName, 0).versionName
+            Log.i(TAG, "apk $packageName $version sha256 $hex")
+        }
     }
 
     override fun onStart() {
         super.onStart()
+        // Install and engine setup run off the main thread; the stream is started back on the
+        // main thread only if this onStart is still current. onStop bumps the generation, so a
+        // setup that finishes after it never starts audio. `generation` and `started` are
+        // touched on the main thread only.
+        val current = ++generation
         thread(name = "gate-a-start") {
-            val message = try {
+            val prepared = try {
                 val engine = engine(applicationContext)
                 engine.setMusicVolume(0.5f)  // the core's default (prefs.rs)
                 engine.setMusic(MusicChoice.Bundled(TRACK))
-                if (NativeAudio.start()) {
-                    started = true
-                    "playing $TRACK; tracks: ${engine.tracks().size}; device rate ${deviceRate()} Hz"
-                } else {
-                    "Oboe could not open the output stream (see logcat HushHourAudio)"
-                }
+                Result.success(engine.tracks().size)
             } catch (e: Throwable) {
                 Log.e(TAG, "start failed", e)
-                "start failed: $e"
+                Result.failure(e)
             }
-            Log.i(TAG, message)
-            runOnUiThread { header = message; show(null) }
+            runOnUiThread {
+                if (current != generation) return@runOnUiThread
+                val message = prepared.fold(
+                    onSuccess = { tracks ->
+                        if (NativeAudio.start()) {
+                            started = true
+                            "playing $TRACK; tracks: $tracks; device rate ${deviceRate()} Hz"
+                        } else {
+                            "Oboe could not open the output stream (see logcat HushHourAudio)"
+                        }
+                    },
+                    onFailure = { "start failed: $it" },
+                )
+                Log.i(TAG, message)
+                header = message
+                show(null)
+            }
         }
         handler.post(tick)
     }
 
     override fun onStop() {
+        generation++
         handler.removeCallbacks(tick)
         started = false
         NativeAudio.stop()

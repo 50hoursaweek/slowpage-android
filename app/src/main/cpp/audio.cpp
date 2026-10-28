@@ -50,17 +50,18 @@ public:
             hushhour_mixer_render(out + done * kChannels, static_cast<uint32_t>(n));
             done += n;
         }
-        float peak = 0.0f;
-        double sum = 0.0;
         for (int32_t i = 0; i < frames * kChannels; ++i) {
-            peak = std::max(peak, std::fabs(out[i]));
-            sum += double(out[i]) * out[i];
+            window_.peak = std::max(window_.peak, std::fabs(out[i]));
+            window_.sumSquares += double(out[i]) * out[i];
         }
-        peak_.store(std::max(peak_.load(std::memory_order_relaxed), peak), std::memory_order_relaxed);
-        sumSquares_.store(sumSquares_.load(std::memory_order_relaxed) + sum, std::memory_order_relaxed);
-        frames_.fetch_add(frames, std::memory_order_relaxed);
-        maxCallback_.store(std::max(maxCallback_.load(std::memory_order_relaxed), frames),
-                           std::memory_order_relaxed);
+        window_.frames += frames;
+        window_.maxCallback = std::max(window_.maxCallback, frames);
+        // Hand the window over once the reader has taken the previous one (see report()).
+        if (!ready_.load(std::memory_order_acquire)) {
+            published_ = window_;
+            window_ = Meter{};
+            ready_.store(true, std::memory_order_release);
+        }
         return oboe::DataCallbackResult::Continue;
     }
 
@@ -73,18 +74,25 @@ public:
         if (wanted_) openAndStart();
     }
 
-    // Stream facts and the meter since the last call, which resets the meter.
-    // [stream rate, frames per burst, max frames per callback, frames rendered, peak, rms,
-    //  audio api (0 unspecified, 1 OpenSL ES, 2 AAudio)]. The single writer is the callback.
+    // Stream facts and the latest meter window: [stream rate, frames per burst, max frames per
+    // callback, frames rendered, peak, rms, audio api (0 unspecified, 1 OpenSL ES, 2 AAudio)].
+    // The callback owns `window_` and fills `published_` only while `ready_` is false; the
+    // reader touches `published_` only while it is true. So each window is counted once, and
+    // the windows follow one another with no gap. Zeros when no new window has been published.
     void report(double out[kReportSize]) {
         std::lock_guard<std::mutex> lock(mutex_);
-        const int64_t frames = frames_.exchange(0);
-        const double sum = sumSquares_.exchange(0.0);
+        Meter m;
+        if (ready_.load(std::memory_order_acquire)) {
+            m = published_;
+            ready_.store(false, std::memory_order_release);
+        }
+        const int64_t frames = m.frames;
+        const double sum = m.sumSquares;
         out[0] = stream_ ? stream_->getSampleRate() : 0;
         out[1] = stream_ ? stream_->getFramesPerBurst() : 0;
-        out[2] = maxCallback_.exchange(0);
+        out[2] = m.maxCallback;
         out[3] = double(frames);
-        out[4] = peak_.exchange(0.0f);
+        out[4] = m.peak;
         out[5] = frames > 0 ? std::sqrt(sum / double(frames * kChannels)) : 0.0;
         out[6] = stream_ ? int(stream_->getAudioApi()) : 0;
     }
@@ -132,10 +140,15 @@ private:
     std::mutex mutex_;
     std::shared_ptr<oboe::AudioStream> stream_;
     bool wanted_ = false;
-    std::atomic<int64_t> frames_{0};
-    std::atomic<double> sumSquares_{0.0};
-    std::atomic<float> peak_{0.0f};
-    std::atomic<int32_t> maxCallback_{0};
+    struct Meter {
+        int64_t frames = 0;
+        double sumSquares = 0.0;
+        float peak = 0.0f;
+        int32_t maxCallback = 0;
+    };
+    Meter window_;     // audio thread only
+    Meter published_;  // see report()
+    std::atomic<bool> ready_{false};
 };
 
 Player player;
