@@ -1,16 +1,13 @@
 # Status
 
 ## Done
-- Gate A build: `hushhour-ipad` .so (arm64-v8a) at inkpad-ipados 873d4f4, Kotlin bindings, Oboe bridge, bundled-music install, release APK. Evidence: `audit/gate-a/evidence.md`.
-
-- Gate A on-device: music audible on the Huawei tablet (Francesco, by ear). applicationId `be.grunt.slowpage`.
+- Gate A: CLOSED-ACCEPTED-RISK (Francesco, 2026-10-28; `audit/gate-a/ruling.md`, `audit/LATEST.md`). APK `da9e93f0…` at 8c651ea, package `be.grunt.slowpage`. Codex round 2: #2 and #3 verified; #1 accepted as a known v1 risk (shared render path, fix upstream only if a dropout is heard); #4 open.
 
 ## In progress
-- Gate A Codex round 1 answered (`audit/gate-a/round-1-claude.md`, fixes in 8c651ea); waiting for the re-check.
+- (none)
 
 ## Blocked
-- Render path not lock- or allocation-free: the fix is upstream (hushhour-ipad / hushhour-core), requested through PMO.
-- Sample-rate logcat evidence: needs the tablet attached to this Mac.
+- By-ear check of APK `da9e93f0…` on the Huawei tablet, and the sample-rate logcat (#4): both need the tablet attached to this Mac; waiting for PMO to confirm a device.
 
 ## Next
-- Codex findings.
+- When a device is confirmed: install `da9e93f0…`, launch, capture `adb logcat -s HushHourGateA HushHourAudio` (APK hash line, stream rate, device rate, API, rms) into `audit/gate-a/`, and Francesco listens. Revisit the render path only if a dropout is heard.
