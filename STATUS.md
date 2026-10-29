@@ -7,7 +7,7 @@
 - Emulator installed on `/Volumes/Expansion/hushhour-android-emulator` (sdk: emulator, platform-tools, AOSP arm64 API 31 image; AVD `slowpage-tablet` in `avd/`, 2000x1200, 240 dpi, landscape, no hardware keyboard; `user-home/` for ANDROID_USER_HOME).
 
 ## In progress
-- Phase 3 Codex round 1 answered (`audit/phase-3/round-1-claude.md`): BLOCKING 1 and MINOR 1–6, 8 fixed and checked on the emulator; MINOR 7 (release signing key) waits for Francesco. APK built with `scripts/release-apk.sh` (R8, under 30 MiB).
+- Phase 3 Codex round 2 answered (`audit/phase-3/round-2-claude.md`): stale-copy rollback, large drafts, caret on API 26–27, recovery leftovers fixed; MINOR 7 (release key) waits for Francesco. Open observation: one ANR in the Gate A music start (main-thread Oboe open), for phase 5.
 
 ## Emulator
 - `/Volumes/Expansion/hushhour-android-emulator`. Start (stdin detached, ANDROID_HOME must point there too, the profile sets it to the old SDK):
@@ -18,4 +18,4 @@
 - Nothing.
 
 ## Next
-- Codex round 2 (or PMO's ruling) on round 1; Francesco's decision on the release key (MINOR 7).
+- PMO ruling on round 2; Francesco's decision on the release key (MINOR 7).

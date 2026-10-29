@@ -3,6 +3,7 @@ package com.fiftyhoursaweek.slowpage
 import android.app.Application
 import android.content.ContentResolver
 import android.net.Uri
+import android.os.Bundle
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.compose.runtime.getValue
@@ -17,6 +18,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.fiftyhoursaweek.slowpage.editor.EditorSession
 import com.fiftyhoursaweek.slowpage.store.DocumentEntry
+import com.fiftyhoursaweek.slowpage.store.Kept
+import com.fiftyhoursaweek.slowpage.store.Recovery
 import com.fiftyhoursaweek.slowpage.store.StateFile
 import com.fiftyhoursaweek.slowpage.store.StateProblems
 import com.fiftyhoursaweek.slowpage.store.StoreError
@@ -83,10 +86,21 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     /** Only the latest Open or New replaces the screen (D5: an older one finishing last is dropped). */
     private var openRequest = 0
 
+    /** The text the recovery folder holds for the open document, so the saved state need not hold it too. */
+    @Volatile private var keptText: String? = null
+    /** What process death left in the saved state, until the reopen uses it. */
+    private var restoredDraft: Bundle? = saved.get<Bundle>(DRAFT_KEY)
+    private var restoredCaret: Bundle? = saved.get<Bundle>(CARET_KEY)
+
     init {
+        // Read when the state is saved, not at onStop: before Android 9 onSaveInstanceState can
+        // come first (Codex round 2, MINOR 1).
+        saved.setSavedStateProvider(DRAFT_KEY) { draftState() }
+        saved.setSavedStateProvider(CARET_KEY) { caretState() }
         viewModelScope.launch {
             preferences = withContext(io) {
                 store.removeLeftovers()
+                recovery.removeLeftovers()
                 StateFile.read(app.preferencesFile)?.let { parsePreferences(it.toString(Charsets.UTF_8)) }
                     ?: defaultPreferences()
             }
@@ -127,30 +141,44 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
 
     /**
      * Open [name]. Text kept from a failed save (a recovery file, or the saved-state draft when
-     * [restoring] after process death) replaces the disk text and is saved again; [restoring]
-     * also puts the caret back where it was.
+     * [restoring] after process death) replaces the disk text and is saved again: the newest
+     * copy, and only when it is newer than the document on disk (a stale copy is dropped).
+     * [restoring] also puts the caret back where it was.
      */
     fun open(name: String, restoring: Boolean = false) {
         if (session != null) return  // one window, one document (L3); close comes first
         val request = ++openRequest
         viewModelScope.launch {
-            val opened = withContext(io) { runCatching { EditorSession.open(store, name) to recovery.read(name) } }
+            val opened = withContext(io) {
+                runCatching { Triple(EditorSession.open(store, name), recovery.read(name), store.file(name).lastModified()) }
+            }
             if (request != openRequest || session != null) {
                 opened.getOrNull()?.first?.close()
                 return@launch
             }
             opened.fold(
-                onSuccess = { (s, kept) ->
+                onSuccess = { (s, kept, onDisk) ->
                     session = s
-                    val draft = kept ?: saved.get<String>(DRAFT_KEY)?.takeIf { restoring }
-                    val recovered = draft != null && draft != s.text && s.change(draft) is EditorSession.Change.Applied
-                    val caret = saved.get<IntArray>(CARET_KEY)?.takeIf { restoring && it.size == 2 }
+                    val draft = restoredDraft?.takeIf { restoring }?.let { draftFrom(it, name) }
+                    val caret = restoredCaret?.takeIf { restoring }
+                    if (restoring) {
+                        restoredDraft = null
+                        restoredCaret = null
+                    }
+                    val newest = Recovery.newest(onDisk, kept, draft)
+                    val recovered = newest != null && newest.text != s.text &&
+                        s.change(newest.text) is EditorSession.Change.Applied
+                    // A recovery copy that lost (older than the disk or the draft) or that
+                    // matches the disk is not needed any more.
+                    if (kept != null && (newest !== kept || kept.text == s.text) && !recovered) {
+                        withContext(io) { recovery.clear(name) }
+                    }
                     // Programmatic: not an edit, so it does not pass through the guard.
                     field.edit {
                         replace(0, length, s.text)
                         selection = if (caret == null) TextRange(0) else TextRange(
-                            caret[0].coerceIn(0, length),
-                            caret[1].coerceIn(0, length),
+                            caret.getInt(START).coerceIn(0, length),
+                            caret.getInt(END).coerceIn(0, length),
                         )
                     }
                     screen = Screen.Editor(name)
@@ -294,7 +322,6 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             session = null
             s.close()
             saved.remove<String>(OPEN_KEY)
-            saved.remove<IntArray>(CARET_KEY)
             screen = Screen.Start
             refresh()
         }
@@ -305,8 +332,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         val s = session ?: return
         saveJob?.cancel()
         val state = s.save()
-        keepDraft(s.text, state, keepFiles(s, s.text, state))
-        saved[CARET_KEY] = intArrayOf(field.selection.start, field.selection.end)
+        if (!keepFiles(s, s.text, state)) warnUnkept(s, state)
         updateStatus()
     }
 
@@ -316,28 +342,61 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     private suspend fun saveAndKeep(s: EditorSession): Persistence {
         val state = withContext(io) { s.save() }
         val text = s.text
-        keepDraft(text, state, withContext(io) { keepFiles(s, text, state) })
+        if (!withContext(io) { keepFiles(s, text, state) }) warnUnkept(s, state)
         return state
     }
 
     /**
-     * After a save: a failed one writes [text] to the recovery folder, a good one (nothing
-     * left unsaved) removes it. Blocking. False when the text is unsaved and the recovery
-     * copy could not be written either.
+     * After a save: a failed one writes [text] to the recovery folder with the time, a good one
+     * (nothing left unsaved) removes it. Blocking. False when the text is unsaved and the
+     * recovery copy could not be written either; an older copy is left, as it is still newer
+     * than the disk, and the saved state ([draftState]) gets the text.
      */
     private fun keepFiles(s: EditorSession, text: String, state: Persistence): Boolean = when {
-        state is Persistence.Failed -> recovery.write(s.name, text) == null
-        !s.isDirty() -> { recovery.clear(s.name); true }
+        state is Persistence.Failed -> (recovery.write(s.name, text, System.currentTimeMillis()) == null)
+            .also { if (it) keptText = text }
+        !s.isDirty() -> {
+            recovery.clear(s.name)
+            keptText = null
+            true
+        }
         else -> true
     }
 
+    private fun warnUnkept(s: EditorSession, state: Persistence) {
+        val reason = (state as? Persistence.Failed)?.reason ?: "the disk refused it"
+        notice = "“${s.name}” could not be saved, and no copy could be kept ($reason). Export it now, or free some space."
+    }
+
     /**
-     * When even the recovery copy failed (a full disk), the text goes into the saved state, so
-     * it survives process death (not a closed task); size-capped, the saved state is small.
+     * The saved-state draft: the unsaved text, when the recovery folder does not hold it (a full
+     * disk), gzipped and capped so the saved state stays small (larger text: only [warnUnkept]
+     * is left). With no document open, what process death left, until it is used.
      */
-    private fun keepDraft(text: String, state: Persistence, kept: Boolean) {
-        if (state is Persistence.Failed && !kept && text.length <= DRAFT_MAX_CHARS) saved[DRAFT_KEY] = text
-        else if (kept) saved.remove<String>(DRAFT_KEY)
+    private fun draftState(): Bundle {
+        val s = session ?: return restoredDraft ?: Bundle()
+        if (!s.isDirty() || s.text == keptText) return Bundle()
+        val packed = Recovery.pack(s.text)
+        if (packed.size > DRAFT_MAX_BYTES) return Bundle()
+        return Bundle().apply {
+            putString(NAME, s.name)
+            putByteArray(TEXT, packed)
+            putLong(STAMP, System.currentTimeMillis())
+        }
+    }
+
+    private fun draftFrom(b: Bundle, name: String): Kept? {
+        if (b.getString(NAME) != name) return null
+        val text = b.getByteArray(TEXT)?.let(Recovery::unpack) ?: return null
+        return Kept(text, b.getLong(STAMP))
+    }
+
+    private fun caretState(): Bundle {
+        if (session == null) return restoredCaret ?: Bundle()
+        return Bundle().apply {
+            putInt(START, field.selection.start)
+            putInt(END, field.selection.end)
+        }
     }
 
     private fun updateStatus() {
@@ -409,7 +468,13 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         private const val OPEN_KEY = "open"
         private const val DRAFT_KEY = "draft"
         private const val CARET_KEY = "caret"
-        private const val DRAFT_MAX_CHARS = 100_000
+        /** Gzipped; prose packs about 3:1, so roughly 750 KB of text. */
+        private const val DRAFT_MAX_BYTES = 256 * 1024
+        private const val NAME = "name"
+        private const val TEXT = "text"
+        private const val STAMP = "stamp"
+        private const val START = "start"
+        private const val END = "end"
         private const val AUTOSAVE_DELAY_MS = 800L
     }
 }
