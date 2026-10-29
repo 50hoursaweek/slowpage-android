@@ -2,7 +2,7 @@
 # Gate A: build hushhour-ipad (inkpad-ipados/HushHourCore) for arm64-v8a and generate its
 # Kotlin bindings. The crate is consumed at a pinned revision, never edited here.
 # Output (not committed): rust-out/jniLibs/arm64-v8a/libhushhour_ipad.so, rust-out/kotlin/,
-# rust-out/assets/music/.
+# rust-out/assets/music/, rust-out/host/libhushhour_ipad.dylib (for JVM unit tests).
 set -eu
 
 REV=873d4f4c74ea22a52658494f2697e86c3a146ddf   # inkpad-ipados: "add cdylib crate type"
@@ -27,6 +27,12 @@ cd "$WORK/HushHourCore"
 # The soname lets the Android linker and JNA agree on one copy (one MIXER static).
 RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-soname,libhushhour_ipad.so" \
     cargo ndk -t arm64-v8a -P 26 -o "$OUT/jniLibs" build --release --lib --locked
+
+# The same crate for this Mac, so JVM unit tests can drive the core through the same
+# Kotlin bindings (JNA loads it from rust-out/host).
+cargo build --release --lib --locked
+mkdir -p "$OUT/host"
+cp target/release/libhushhour_ipad.dylib "$OUT/host/"
 
 rm -rf "$OUT/kotlin"
 cargo run --quiet --release --features cli --bin uniffi-bindgen -- \

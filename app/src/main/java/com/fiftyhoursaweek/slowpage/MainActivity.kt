@@ -1,140 +1,135 @@
 package com.fiftyhoursaweek.slowpage
 
-import android.app.Activity
-import android.content.Context
-import android.media.AudioManager
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
-import android.widget.TextView
-import java.io.File
-import java.security.MessageDigest
-import uniffi.hushhour.AudioEngine
-import uniffi.hushhour.MusicChoice
-import kotlin.concurrent.thread
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import com.fiftyhoursaweek.slowpage.store.Names
+import com.fiftyhoursaweek.slowpage.ui.EditorScreen
+import com.fiftyhoursaweek.slowpage.ui.SettingsScreen
+import com.fiftyhoursaweek.slowpage.ui.SlowpageTheme
+import com.fiftyhoursaweek.slowpage.ui.StartScreen
 
-/**
- * Gate A spike, no UI: installs the bundled music, plays one track through the Rust mixer and
- * Oboe, and shows the stream facts and output level once a second (also in logcat, tag
- * "HushHourGateA").
- */
-class MainActivity : Activity() {
-    private lateinit var status: TextView
-    private val handler = Handler(Looper.getMainLooper())
-    private var started = false
-    private var generation = 0
-    private var lines = listOf<String>()
+/** The one window (L3: `singleTask`, one document at a time). */
+class MainActivity : ComponentActivity() {
+    private val vm: ShellViewModel by viewModels()
+    private lateinit var music: Music
 
-    private val tick = object : Runnable {
-        override fun run() {
-            if (started) {
-                val r = NativeAudio.read()
-                val line = "stream ${r.streamRate} Hz (${r.api}), burst ${r.framesPerBurst}, " +
-                    "max callback ${r.maxCallbackFrames}, frames ${r.frames}, " +
-                    "peak %.3f, rms %.4f".format(r.peak, r.rms)
-                Log.i(TAG, line)
-                show(line)
-            }
-            handler.postDelayed(this, 1000)
-        }
+    /** The document an Export… is for, while the system's Create document screen is up. */
+    private var exporting: String? = null
+
+    // SAF is import and export only (decided 2026-10-28). Any type: providers label Markdown
+    // inconsistently, and the store checks the bytes as text itself.
+    private val importer = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { vm.import(contentResolver, it) }
+    }
+    private val markdownExporter = registerForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
+        finishExport(uri)
+    }
+    private val textExporter = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        finishExport(uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        status = TextView(this).apply { setPadding(48, 48, 48, 48); textSize = 16f }
-        setContentView(status)
-        logApkHash()
-    }
-
-    /** Ties logcat evidence to the installed build: the SHA-256 of this APK file. */
-    private fun logApkHash() {
-        val apk = File(applicationInfo.sourceDir)
-        thread(name = "gate-a-apk-hash") {
-            val digest = MessageDigest.getInstance("SHA-256")
-            apk.inputStream().use { input ->
-                val buffer = ByteArray(1 shl 16)
-                while (true) {
-                    val n = input.read(buffer)
-                    if (n < 0) break
-                    digest.update(buffer, 0, n)
+        exporting = savedInstanceState?.getString(EXPORTING_KEY)
+        music = Music(this)
+        setContent {
+            SlowpageTheme(vm.preferences.theme) {
+                val snackbar = remember { SnackbarHostState() }
+                LaunchedEffect(vm.notice) {
+                    vm.notice?.let {
+                        snackbar.showSnackbar(it, withDismissAction = true)
+                        vm.notice = null
+                    }
+                }
+                BackHandler(enabled = vm.screen != Screen.Start) { vm.back() }
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding().imePadding()) {
+                    when (val screen = vm.screen) {
+                        Screen.Start -> StartScreen(
+                            documents = vm.documents,
+                            recent = vm.recent,
+                            problems = vm.problems,
+                            music = vm.music,
+                            onNew = vm::newDocument,
+                            onImport = { importer.launch(arrayOf("*/*")) },
+                            onSettings = vm::openSettings,
+                            onOpen = vm::open,
+                            onExport = ::startExport,
+                            onDelete = vm::delete,
+                        )
+                        is Screen.Editor -> EditorScreen(
+                            name = screen.name,
+                            field = vm.field,
+                            status = (listOf(vm.status) + vm.problems).filter { it.isNotEmpty() }.joinToString(" · "),
+                            readOnly = vm.closing,
+                            textSize = vm.preferences.size,
+                            lineHeight = vm.preferences.lineHeight,
+                            onChange = vm::onFieldChange,
+                            onClose = vm::closeEditor,
+                            onExport = { startExport(screen.name) },
+                        )
+                        Screen.Settings -> SettingsScreen(
+                            preferences = vm.preferences,
+                            problems = vm.problems,
+                            onChange = { p ->
+                                vm.updatePreferences(p)
+                                music.setVolume(p.musicVolume)
+                            },
+                            onBack = { vm.back() },
+                        )
+                    }
+                    SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
                 }
             }
-            val hex = digest.digest().joinToString("") { "%02x".format(it) }
-            val version = packageManager.getPackageInfo(packageName, 0).versionName
-            Log.i(TAG, "apk $packageName $version sha256 $hex")
         }
+    }
+
+    private fun startExport(name: String) {
+        exporting = name
+        if (Names.split(name).second.lowercase() == "txt") textExporter.launch(name) else markdownExporter.launch(name)
+    }
+
+    private fun finishExport(uri: android.net.Uri?) {
+        val name = exporting ?: return
+        exporting = null
+        uri?.let { vm.export(contentResolver, it, name) }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(EXPORTING_KEY, exporting)
     }
 
     override fun onStart() {
         super.onStart()
-        // Install and engine setup run off the main thread; the stream is started back on the
-        // main thread only if this onStart is still current. onStop bumps the generation, so a
-        // setup that finishes after it never starts audio. `generation` and `started` are
-        // touched on the main thread only.
-        val current = ++generation
-        thread(name = "gate-a-start") {
-            val prepared = try {
-                val engine = engine(applicationContext)
-                engine.setMusicVolume(0.5f)  // the core's default (prefs.rs)
-                engine.setMusic(MusicChoice.Bundled(TRACK))
-                Result.success(engine.tracks().size)
-            } catch (e: Throwable) {
-                Log.e(TAG, "start failed", e)
-                Result.failure(e)
-            }
-            runOnUiThread {
-                if (current != generation) return@runOnUiThread
-                val message = prepared.fold(
-                    onSuccess = { tracks ->
-                        if (NativeAudio.start()) {
-                            started = true
-                            "playing $TRACK; tracks: $tracks; device rate ${deviceRate()} Hz"
-                        } else {
-                            "Oboe could not open the output stream (see logcat HushHourAudio)"
-                        }
-                    },
-                    onFailure = { "start failed: $it" },
-                )
-                Log.i(TAG, message)
-                header = message
-                show(null)
-            }
-        }
-        handler.post(tick)
+        vm.refresh()
+        music.start(vm.preferences.musicVolume) { vm.music = it }
     }
 
     override fun onStop() {
-        generation++
-        handler.removeCallbacks(tick)
-        started = false
-        NativeAudio.stop()
+        vm.saveNow()
+        music.stop()
         super.onStop()
     }
 
-    private var header = "starting"
-
-    private fun show(line: String?) {
-        if (line != null) lines = (lines + line).takeLast(12)
-        status.text = (listOf("Slowpage Gate A", header, "") + lines).joinToString("\n")
-    }
-
-    private fun deviceRate(): String? =
-        (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
-            .getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)
-
     companion object {
-        private const val TAG = "HushHourGateA"
-        private const val TRACK = "Late cafe.ogg"
-
-        // One engine for the process: creating one replaces the mixer behind the C render export.
-        @Volatile private var shared: AudioEngine? = null
-
-        fun engine(context: Context): AudioEngine = shared ?: synchronized(this) {
-            shared ?: AudioEngine(
-                MusicFiles.install(context).path,
-                MusicFiles.userDir(context).path,
-            ).also { shared = it }
-        }
+        private const val EXPORTING_KEY = "exporting"
     }
 }

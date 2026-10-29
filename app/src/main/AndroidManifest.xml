@@ -4,12 +4,18 @@
     <supports-screens android:smallScreens="false" android:normalScreens="false"
         android:largeScreens="true" android:xlargeScreens="true" />
 
+    <!-- allowBackup=false: S5, approved. -->
     <application
+        android:name=".SlowpageApp"
         android:label="Slowpage"
-        android:allowBackup="false">
+        android:allowBackup="false"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <!-- One window (L3): singleTask, one document at a time. -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

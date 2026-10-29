@@ -1,6 +1,7 @@
 package com.fiftyhoursaweek.slowpage
 
 import android.content.Context
+import android.os.Build
 import java.io.File
 
 /**
@@ -19,7 +20,8 @@ object MusicFiles {
     fun install(context: Context): File {
         val dir = bundledDir(context)
         val stamp = File(dir, ".installed")
-        val version = context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode.toString()
+        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+        val version = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode.toString() else @Suppress("DEPRECATION") info.versionCode.toString()
         if (stamp.isFile && stamp.readText() == version) return dir
 
         dir.mkdirs()

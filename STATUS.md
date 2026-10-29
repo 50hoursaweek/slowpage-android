@@ -1,13 +1,14 @@
 # Status
 
 ## Done
-- Gate A: CLOSED-ACCEPTED-RISK (Francesco, 2026-10-28; `audit/gate-a/ruling.md`, `audit/LATEST.md`). APK `da9e93f0…` at 8c651ea, package `be.grunt.slowpage`. Codex round 2: #2 and #3 verified; #1 accepted as a known v1 risk (shared render path, fix upstream only if a dropout is heard); #4 open.
+- Gate A: closed (Francesco heard the music; CLOSED-AGREED 2026-10-29 in `audit/LATEST.md`).
+- Phase 3 shell, first usable build: start screen, documents in app storage (New, Open, Delete), Import/Export through SAF, Recents (new format), settings skeleton, a plain text editor with autosave through the core Document. 41 JVM unit tests pass; lint shows 0 errors. Notes, the known-MINOR list and "what to try": `audit/phase-3/notes.md`.
 
 ## In progress
-- (none)
+- Phase 3 APK with Francesco for a try on the tablet.
 
 ## Blocked
-- By-ear check of APK `da9e93f0…` on the Huawei tablet, and the sample-rate logcat (#4): both need the tablet attached to this Mac; waiting for PMO to confirm a device.
+- Not run on any device by this agent (no device attached; an emulator does not fit the disk).
 
 ## Next
-- When a device is confirmed: install `da9e93f0…`, launch, capture `adb logcat -s HushHourGateA HushHourAudio` (APK hash line, stream rate, device rate, API, rms) into `audit/gate-a/`, and Francesco listens. Revisit the render path only if a dropout is heard.
+- Fix what the tablet try finds; then the end-of-phase Codex audit (one, per PMO).
