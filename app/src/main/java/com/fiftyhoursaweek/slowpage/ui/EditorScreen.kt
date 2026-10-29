@@ -1,5 +1,6 @@
 package com.fiftyhoursaweek.slowpage.ui
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,7 +8,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.InputTransformation
+import androidx.compose.foundation.text.input.TextFieldDecorator
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -22,7 +27,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,18 +36,24 @@ import androidx.compose.ui.unit.sp
  * A plain text area for phase 3; the real editor (IME matrix, highlighting, measure,
  * typewriter, undo keys) is phase 4. The top line: back to Documents, the name, the save
  * state (D3: a failed save is shown with its reason), Export….
+ *
+ * The field is the state-based `BasicTextField`: it scrolls itself and keeps the caret in
+ * view while typing (F4), and [guard] sees every edit before it lands (the core's limit).
+ * It covers the whole page, margins included, so a tap anywhere focuses it (F1).
  */
 @Composable
 fun EditorScreen(
     name: String,
-    field: TextFieldValue,
+    state: TextFieldState,
+    guard: InputTransformation,
     status: String,
     readOnly: Boolean,
+    fontFamily: FontFamily,
     textSize: Float,
     lineHeight: Float,
-    onChange: (TextFieldValue) -> Unit,
     onClose: () -> Unit,
     onExport: () -> Unit,
+    scroll: ScrollState = rememberScrollState(),
 ) {
     val colors = MaterialTheme.colorScheme
     val focus = remember { FocusRequester() }
@@ -66,16 +77,20 @@ fun EditorScreen(
             )
             TextButton(onClick = onExport) { Text("Export…") }
         }
-        // F1: the field itself covers the whole page, margins included, so a tap anywhere
-        // focuses it and places the caret (below the text: at the end). It scrolls itself.
         BasicTextField(
-            value = field,
-            onValueChange = onChange,
-            readOnly = readOnly,
-            textStyle = TextStyle(color = colors.onBackground, fontSize = textSize.sp, lineHeight = (textSize * lineHeight).sp),
-            cursorBrush = SolidColor(colors.onBackground),
+            state = state,
             modifier = Modifier.fillMaxSize().focusRequester(focus).testTag(EDITOR_TAG),
-            decorationBox = { inner ->
+            readOnly = readOnly,
+            inputTransformation = guard,
+            textStyle = TextStyle(
+                color = colors.onBackground,
+                fontFamily = fontFamily,
+                fontSize = textSize.sp,
+                lineHeight = (textSize * lineHeight).sp,
+            ),
+            cursorBrush = SolidColor(colors.onBackground),
+            scrollState = scroll,
+            decorator = TextFieldDecorator { inner ->
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                     Box(Modifier.widthIn(max = 760.dp).fillMaxWidth().padding(horizontal = 32.dp, vertical = 24.dp)) {
                         inner()

@@ -8,8 +8,10 @@ import android.provider.OpenableColumns
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.text.input.InputTransformation
+import androidx.compose.foundation.text.input.TextFieldBuffer
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
@@ -66,8 +68,10 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
 
     // The open document.
     private var session: EditorSession? = null
-    var field by mutableStateOf(TextFieldValue(""))
-        private set
+    /** The text field's state; user edits reach it only through [guard]. */
+    val field = TextFieldState()
+    /** Every user edit goes to the core first; a refused one is reverted before it shows. */
+    val guard = InputTransformation { guardEdit(this) }
     var status by mutableStateOf("")
         private set
     /** Read-only while a close is writing the text (D4); editable again if the close fails. */
@@ -128,7 +132,11 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             opened.fold(
                 onSuccess = { s ->
                     session = s
-                    field = TextFieldValue(s.text)
+                    // Programmatic: not an edit, so it does not pass through the guard.
+                    field.edit {
+                        replace(0, length, s.text)
+                        selection = TextRange(0)
+                    }
                     screen = Screen.Editor(name)
                     saved[OPEN_KEY] = name
                     updateStatus()
@@ -210,18 +218,18 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
 
     // ---- Editor
 
-    fun onFieldChange(value: TextFieldValue) {
-        val s = session ?: return
-        if (closing) return
-        when (val change = s.change(value.text)) {
-            is EditorSession.Change.Applied -> {
-                field = if (change.text == value.text) value else value.copy(
-                    text = change.text,
-                    selection = TextRange(value.selection.start.coerceAtMost(change.text.length)),
-                )
-                if (s.isDirty()) scheduleSave()
+    private fun guardEdit(buffer: TextFieldBuffer) {
+        val s = session
+        if (s == null || closing) {
+            buffer.revertAllChanges()
+            return
+        }
+        when (val change = s.change(buffer.asCharSequence().toString())) {
+            is EditorSession.Change.Applied -> if (s.isDirty()) scheduleSave()
+            is EditorSession.Change.Refused -> {
+                buffer.revertAllChanges()
+                notice = change.reason
             }
-            is EditorSession.Change.Refused -> notice = change.reason
         }
         updateStatus()
     }

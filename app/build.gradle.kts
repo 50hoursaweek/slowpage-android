@@ -54,6 +54,7 @@ android {
         unitTests.isIncludeAndroidResources = true
         unitTests.all {
             it.systemProperty("jna.library.path", rustOut.resolve("host").absolutePath)
+            it.systemProperty("slowpage.assets", rustOut.resolve("assets").absolutePath)
         }
     }
 

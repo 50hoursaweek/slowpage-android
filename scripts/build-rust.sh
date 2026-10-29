@@ -2,7 +2,7 @@
 # Gate A: build hushhour-ipad (inkpad-ipados/HushHourCore) for arm64-v8a and generate its
 # Kotlin bindings. The crate is consumed at a pinned revision, never edited here.
 # Output (not committed): rust-out/jniLibs/arm64-v8a/libhushhour_ipad.so, rust-out/kotlin/,
-# rust-out/assets/music/, rust-out/host/libhushhour_ipad.dylib (for JVM unit tests).
+# rust-out/assets/music/, rust-out/assets/fonts/, rust-out/host/libhushhour_ipad.dylib (for JVM unit tests).
 set -eu
 
 REV=873d4f4c74ea22a52658494f2697e86c3a146ddf   # inkpad-ipados: "add cdylib crate type"
@@ -42,5 +42,14 @@ cargo run --quiet --release --features cli --bin uniffi-bindgen -- \
 rm -rf "$OUT/assets/music"
 mkdir -p "$OUT/assets/music"
 cp "$WORK/HushHour/HushHour/Resources/Music/"*.ogg "$OUT/assets/music/"
+
+# Editor fonts (F3): the three OFL families, unmodified, with their licences; the same files
+# as hushhour-ref/assets/fonts (Linux), as shipped in the iPad bundle at $REV.
+rm -rf "$OUT/assets/fonts"
+mkdir -p "$OUT/assets/fonts"
+for f in "$WORK/HushHour/HushHour/Resources/Fonts/"IBMPlex*.ttf "$WORK/HushHour/HushHour/Resources/Fonts/"Literata-*.ttf \
+         "$WORK/HushHour/HushHour/Resources/Fonts/"LICENSE-IBM-Plex-*.txt "$WORK/HushHour/HushHour/Resources/Fonts/"LICENSE-Literata.txt; do
+    cp "$f" "$OUT/assets/fonts/"
+done
 
 find "$OUT" -type f | sed "s|$ROOT/||" | sort

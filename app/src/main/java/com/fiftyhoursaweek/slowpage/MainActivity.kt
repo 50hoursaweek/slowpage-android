@@ -24,6 +24,7 @@ import com.fiftyhoursaweek.slowpage.ui.EditorScreen
 import com.fiftyhoursaweek.slowpage.ui.SettingsScreen
 import com.fiftyhoursaweek.slowpage.ui.SlowpageTheme
 import com.fiftyhoursaweek.slowpage.ui.StartScreen
+import com.fiftyhoursaweek.slowpage.ui.editorFontFamily
 
 /** The one window (L3: `singleTask`, one document at a time). */
 class MainActivity : ComponentActivity() {
@@ -76,12 +77,13 @@ class MainActivity : ComponentActivity() {
                         )
                         is Screen.Editor -> EditorScreen(
                             name = screen.name,
-                            field = vm.field,
+                            state = vm.field,
+                            guard = vm.guard,
                             status = (listOf(vm.status) + vm.problems).filter { it.isNotEmpty() }.joinToString(" · "),
                             readOnly = vm.closing,
+                            fontFamily = remember(vm.preferences.font) { editorFontFamily(vm.preferences.font, assets) },
                             textSize = vm.preferences.size,
                             lineHeight = vm.preferences.lineHeight,
-                            onChange = vm::onFieldChange,
                             onClose = vm::closeEditor,
                             onExport = { startExport(screen.name) },
                         )
