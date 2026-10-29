@@ -365,13 +365,15 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
 
     private fun warnUnkept(s: EditorSession, state: Persistence) {
         val reason = (state as? Persistence.Failed)?.reason ?: "the disk refused it"
-        notice = "“${s.name}” could not be saved, and no copy could be kept ($reason). Export it now, or free some space."
+        // Not "Export": an export saves first, and that is what fails (Codex round 2, MINOR 3).
+        notice = "“${s.name}” could not be saved, and no copy could be kept ($reason). " +
+            "Keep Slowpage open and free some space on the tablet; the text is saved again on your next change or when you close it."
     }
 
     /**
      * The saved-state draft: the unsaved text, when the recovery folder does not hold it (a full
      * disk), gzipped and capped so the saved state stays small (larger text: only [warnUnkept]
-     * is left). With no document open, what process death left, until it is used.
+     * is left; the cap is Francesco's decision, Codex round 2). With no document open, what process death left, until it is used.
      */
     private fun draftState(): Bundle {
         val s = session ?: return restoredDraft ?: Bundle()

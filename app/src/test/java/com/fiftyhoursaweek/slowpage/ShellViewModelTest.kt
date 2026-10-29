@@ -177,6 +177,7 @@ class ShellViewModelTest {
         writable(app.recovery.folder, false)
         vm.saveNow()
         assertNotNull(vm.notice)  // nothing could be kept on disk: the writer is told
+        assertFalse(vm.notice!!, "Export" in vm.notice!!)  // an export would save first, and fail (round 2, MINOR 3)
 
         processDeath(vm)
         val state = restored(handle)
