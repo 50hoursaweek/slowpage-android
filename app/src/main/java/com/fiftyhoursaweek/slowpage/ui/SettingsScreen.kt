@@ -45,7 +45,7 @@ fun SettingsScreen(
             for (line in problems) Text(line, color = MaterialTheme.colorScheme.error)
 
             Choice("Theme", themeLabel(preferences.theme)) { onChange(preferences.copy(theme = nextTheme(preferences.theme))) }
-            Choice("Font (editor, phase 4)", fontLabel(preferences.font)) { onChange(preferences.copy(font = nextFont(preferences.font))) }
+            Choice("Font", fontLabel(preferences.font)) { onChange(preferences.copy(font = nextFont(preferences.font))) }
             Level("Text size: ${preferences.size.toInt()}", preferences.size, limits.minSize..limits.maxSize) {
                 onChange(preferences.copy(size = it))
             }

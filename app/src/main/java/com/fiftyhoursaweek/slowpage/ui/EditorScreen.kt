@@ -18,11 +18,29 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import android.util.Log
+import android.view.ViewTreeObserver
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -58,12 +76,31 @@ fun EditorScreen(
     val colors = MaterialTheme.colorScheme
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    // F1: on New and on Open the caret is in the text with the keyboard up.
-    LaunchedEffect(name) {
+    val view = LocalView.current
+    // F1: the Android view that hosts Compose must hold focus too, or the keyboard does not come
+    // up; on the Huawei tablet a tap did not give it focus (arrow keys did). Ask for it directly.
+    fun focusEditor(why: String) {
+        view.isFocusableInTouchMode = true
+        val viewTook = view.isFocused || view.requestFocus()
         focus.requestFocus()
         keyboard?.show()
+        Log.i(TAG, "focus ($why): view=$viewTook touchMode=${view.isInTouchMode} window=${view.hasWindowFocus()}")
     }
-    Column(Modifier.fillMaxSize()) {
+    // F1: on New and on Open the caret is in the text with the keyboard up.
+    LaunchedEffect(name) { focusEditor("open") }
+
+    // F1/F4 readout for the phase 3 retest on the tablet (the emulator does not show either bug).
+    var fieldFocused by remember { mutableStateOf(false) }
+    var viewFocused by remember { mutableStateOf(view.isFocused) }
+    var height by remember { mutableIntStateOf(0) }
+    DisposableEffect(view) {
+        val listener = ViewTreeObserver.OnGlobalFocusChangeListener { _, _ -> viewFocused = view.isFocused }
+        view.viewTreeObserver.addOnGlobalFocusChangeListener(listener)
+        onDispose { view.viewTreeObserver.removeOnGlobalFocusChangeListener(listener) }
+    }
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+
+    Column(Modifier.fillMaxSize().onSizeChanged { height = it.height }) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onClose, enabled = !readOnly) { Text("‹ Documents") }
             Text(name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
@@ -79,7 +116,19 @@ fun EditorScreen(
         }
         BasicTextField(
             state = state,
-            modifier = Modifier.fillMaxSize().focusRequester(focus).testTag(EDITOR_TAG),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .focusRequester(focus)
+                .onFocusChanged { fieldFocused = it.isFocused }
+                // Watches each tap without taking it, so the field still places the caret.
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        if (waitForUpOrCancellation(PointerEventPass.Initial) != null) focusEditor("tap")
+                    }
+                }
+                .testTag(EDITOR_TAG),
             readOnly = readOnly,
             inputTransformation = guard,
             textStyle = TextStyle(
@@ -98,8 +147,19 @@ fun EditorScreen(
                 }
             },
         )
+        Text(
+            "focus: field ${yes(fieldFocused)} · view ${yes(viewFocused)} · touch ${yes(view.isInTouchMode)} · " +
+                "keyboard ${imeBottom}px · page ${height}px",
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+            color = colors.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+        )
     }
 }
+
+private fun yes(b: Boolean) = if (b) "yes" else "no"
+
+private const val TAG = "SlowpageEditor"
 
 /** Test tag of the text area. */
 const val EDITOR_TAG = "editor"

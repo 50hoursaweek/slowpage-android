@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
@@ -47,7 +46,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
+        // No edge-to-edge (F4): the window is resized for the keyboard (adjustResize) instead of
+        // relying on IME insets, which the Huawei keyboard may not report.
         super.onCreate(savedInstanceState)
         exporting = savedInstanceState?.getString(EXPORTING_KEY)
         music = Music(this)
