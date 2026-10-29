@@ -80,6 +80,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("com.google.oboe:oboe:1.10.0")
+    // The preview: one text per block, laid out only when it shows (V3).
+    implementation("androidx.recyclerview:recyclerview:1.4.0")
     // UniFFI's Kotlin bindings load the Rust library through JNA.
     implementation("net.java.dev.jna:jna:5.19.1@aar")
     // The bindings' Android cleaner (API 34+) is marked @RequiresApi.

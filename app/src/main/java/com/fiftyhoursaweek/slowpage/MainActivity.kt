@@ -1,6 +1,10 @@
 package com.fiftyhoursaweek.slowpage
 
 import android.os.Bundle
+import android.view.KeyEvent
+import android.view.KeyboardShortcutGroup
+import android.view.KeyboardShortcutInfo
+import android.view.Menu
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -18,12 +22,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.fiftyhoursaweek.slowpage.editor.Command
+import com.fiftyhoursaweek.slowpage.editor.Shortcuts
 import com.fiftyhoursaweek.slowpage.store.Names
 import com.fiftyhoursaweek.slowpage.ui.EditorScreen
 import com.fiftyhoursaweek.slowpage.ui.SettingsScreen
 import com.fiftyhoursaweek.slowpage.ui.SlowpageTheme
 import com.fiftyhoursaweek.slowpage.ui.StartScreen
-import com.fiftyhoursaweek.slowpage.ui.editorFontFamily
 
 /** The one window (L3: `singleTask`, one document at a time). */
 class MainActivity : ComponentActivity() {
@@ -71,23 +76,18 @@ class MainActivity : ComponentActivity() {
                             problems = vm.problems,
                             music = vm.music,
                             onNew = vm::newDocument,
-                            onImport = { importer.launch(arrayOf("*/*")) },
+                            onImport = ::startImport,
                             onSettings = vm::openSettings,
                             onOpen = vm::open,
                             onExport = ::startExport,
                             onDelete = vm::delete,
                         )
                         is Screen.Editor -> EditorScreen(
+                            vm = vm,
                             name = screen.name,
-                            state = vm.field,
-                            guard = vm.guard,
                             status = (listOf(vm.status) + vm.problems).filter { it.isNotEmpty() }.joinToString(" · "),
-                            readOnly = vm.closing,
-                            fontFamily = remember(vm.preferences.font) { editorFontFamily(vm.preferences.font, assets) },
-                            textSize = vm.preferences.size,
-                            lineHeight = vm.preferences.lineHeight,
-                            onClose = vm::closeEditor,
                             onExport = { startExport(screen.name) },
+                            onImport = ::startImport,
                         )
                         Screen.Settings -> SettingsScreen(
                             preferences = vm.preferences,
@@ -102,6 +102,57 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** Import… from the editor closes the document first (one document at a time, L3). */
+    private fun startImport() {
+        val launch = { importer.launch(arrayOf("*/*")) }
+        if (vm.screen is Screen.Editor) vm.closeEditor(then = launch) else launch()
+    }
+
+    /**
+     * The shortcuts with Ctrl (K1), before any view sees the key: the editor's own Ctrl+Z
+     * would reach the platform history, which is off (E12). Copy, cut, paste and select all
+     * are not in the table and stay with the text views.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val command = Shortcuts.command(event) ?: return super.dispatchKeyEvent(event)
+        if (event.action != KeyEvent.ACTION_DOWN) return true
+        when (vm.screen) {
+            is Screen.Editor -> if (command == Command.IMPORT) startImport() else vm.command(command)
+            Screen.Start -> when (command) {
+                Command.NEW -> vm.newDocument()
+                Command.IMPORT -> startImport()
+                Command.MENU -> vm.openSettings()
+                else -> return super.dispatchKeyEvent(event)
+            }
+            Screen.Settings -> return super.dispatchKeyEvent(event)
+        }
+        return true
+    }
+
+    /** The table in the system's Keyboard Shortcuts Helper (Meta+/), where the system has one (K1). */
+    override fun onProvideKeyboardShortcuts(data: MutableList<KeyboardShortcutGroup>, menu: Menu?, deviceId: Int) {
+        val ctrl = KeyEvent.META_CTRL_ON
+        val shift = KeyEvent.META_SHIFT_ON
+        fun item(label: String, key: Int, meta: Int = ctrl) = KeyboardShortcutInfo(label, key, meta)
+        data += KeyboardShortcutGroup("Slowpage", listOf(
+            item("Menu", KeyEvent.KEYCODE_COMMA),
+            item("New document", KeyEvent.KEYCODE_N),
+            item("Documents", KeyEvent.KEYCODE_O),
+            item("Import…", KeyEvent.KEYCODE_O, ctrl or shift),
+            item("Close", KeyEvent.KEYCODE_W),
+            item("Undo", KeyEvent.KEYCODE_Z),
+            item("Redo", KeyEvent.KEYCODE_Z, ctrl or shift),
+            item("Spotlight", KeyEvent.KEYCODE_D),
+            item("Anchor", KeyEvent.KEYCODE_T),
+            item("Theme", KeyEvent.KEYCODE_T, ctrl or shift),
+            item("Font", KeyEvent.KEYCODE_F, ctrl or shift),
+            item("Editor, Split, Preview", KeyEvent.KEYCODE_P, ctrl or shift),
+            item("Larger text", KeyEvent.KEYCODE_EQUALS),
+            item("Smaller text", KeyEvent.KEYCODE_MINUS),
+        ))
+        super.onProvideKeyboardShortcuts(data, menu, deviceId)
     }
 
     private fun startExport(name: String) {

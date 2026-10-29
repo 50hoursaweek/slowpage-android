@@ -4,19 +4,26 @@ import android.app.Application
 import android.content.ContentResolver
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.text.input.InputTransformation
-import androidx.compose.foundation.text.input.TextFieldBuffer
-import androidx.compose.foundation.text.input.TextFieldState
-import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import com.fiftyhoursaweek.slowpage.editor.Command
+import com.fiftyhoursaweek.slowpage.editor.EditorHost
 import com.fiftyhoursaweek.slowpage.editor.EditorSession
+import com.fiftyhoursaweek.slowpage.editor.EditorSink
+import com.fiftyhoursaweek.slowpage.editor.Edited
+import com.fiftyhoursaweek.slowpage.editor.HighlightModel
+import com.fiftyhoursaweek.slowpage.editor.diff
+import com.fiftyhoursaweek.slowpage.preview.PreviewLook
+import com.fiftyhoursaweek.slowpage.preview.PreviewRenderer
+import com.fiftyhoursaweek.slowpage.preview.RenderedPreview
+import com.fiftyhoursaweek.slowpage.ui.Faces
 import com.fiftyhoursaweek.slowpage.store.DocumentEntry
 import com.fiftyhoursaweek.slowpage.store.Kept
 import com.fiftyhoursaweek.slowpage.store.Recovery
@@ -31,7 +38,15 @@ import kotlinx.coroutines.withContext
 import uniffi.hushhour.DocumentException
 import uniffi.hushhour.Persistence
 import uniffi.hushhour.Preferences
+import uniffi.hushhour.TextChange
+import uniffi.hushhour.ViewMode
 import uniffi.hushhour.defaultPreferences
+import uniffi.hushhour.limits
+import uniffi.hushhour.nextFocus
+import uniffi.hushhour.nextFont
+import uniffi.hushhour.nextTheme
+import uniffi.hushhour.nextView
+import uniffi.hushhour.preview
 import uniffi.hushhour.parsePreferences
 import uniffi.hushhour.serializePreferences
 import java.io.IOException
@@ -72,10 +87,53 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
 
     // The open document.
     private var session: EditorSession? = null
-    /** The text field's state; user edits reach it only through [guard]. */
-    val field = TextFieldState()
-    /** Every user edit goes to the core first; a refused one is reverted before it shows. */
-    val guard = InputTransformation { guardEdit(this) }
+    /** Its highlighting state (fence states, line table); survives rotation with the view model. */
+    var highlight: HighlightModel? = null
+        private set
+    /** The editor on screen, while there is one; it applies undo and redo and redraws the spotlight. */
+    private var sink: EditorSink? = null
+    /** The selection in the editor (UTF-16), kept across rotation and process death. */
+    var selectionStart = 0
+        private set
+    var selectionEnd = 0
+        private set
+    /** Bumped when the caret moves or the text changes, so the preview keeps level (V5). */
+    var caretTick by mutableStateOf(0)
+        private set
+    /** Editor, Split or Preview (V1): not a preference, every opened document starts in Editor. */
+    var viewMode by mutableStateOf(ViewMode.EDITOR)
+        private set
+    /** Words, characters, reading time (E15). */
+    var stats by mutableStateOf("")
+        private set
+    var canUndo by mutableStateOf(false)
+        private set
+    var canRedo by mutableStateOf(false)
+        private set
+    /** The editor's menu (Ctrl+, opens and closes it). */
+    var menuOpen by mutableStateOf(false)
+    /** The latest preview for the current text (V3, V5): never one parsed from an older revision. */
+    var preview by mutableStateOf<RenderedPreview?>(null)
+        private set
+    /** The look the preview is rendered in; the screen sets it, as it depends on the window. */
+    var previewLook: PreviewLook? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            refreshPreview(reparse = false)
+        }
+    /** A short line when someone types or taps in the preview (V6), or null. */
+    var hint by mutableStateOf<String?>(null)
+        private set
+    val faces = Faces(application.assets)
+    private val previewLane = Dispatchers.Default.limitedParallelism(1)
+    private var previewGeneration = 0
+    private var previewJob: Job? = null
+    private var previewRevision: Pair<ULong, ULong>? = null
+    private var previewBlocks: List<uniffi.hushhour.PreviewBlock>? = null
+    private var renderedLook: PreviewLook? = null
+    private var statsJob: Job? = null
+    private var hintJob: Job? = null
     var status by mutableStateOf("")
         private set
     /** Read-only while a close is writing the text (D4); editable again if the close fails. */
@@ -173,14 +231,16 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
                     if (kept != null && (newest !== kept || kept.text == s.text) && !recovered) {
                         withContext(io) { recovery.clear(name) }
                     }
-                    // Programmatic: not an edit, so it does not pass through the guard.
-                    field.edit {
-                        replace(0, length, s.text)
-                        selection = if (caret == null) TextRange(0) else TextRange(
-                            caret.getInt(START).coerceIn(0, length),
-                            caret.getInt(END).coerceIn(0, length),
-                        )
-                    }
+                    val text = s.text
+                    val font = preferences.font
+                    highlight = withContext(io) { HighlightModel(font).apply { reset(text) } }
+                    selectionStart = caret?.getInt(START)?.coerceIn(0, text.length) ?: 0
+                    selectionEnd = caret?.getInt(END)?.coerceIn(0, text.length) ?: 0
+                    viewMode = ViewMode.EDITOR
+                    preview = null
+                    previewBlocks = null
+                    previewRevision = null
+                    updateEditState()
                     screen = Screen.Editor(name)
                     saved[OPEN_KEY] = name
                     updateStatus()
@@ -277,21 +337,186 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
 
     // ---- Editor
 
-    private fun guardEdit(buffer: TextFieldBuffer) {
-        if (!accept(buffer.asCharSequence().toString())) buffer.revertAllChanges()
+    fun attach(editor: EditorSink) {
+        sink = editor
     }
 
-    /** A user edit that makes the text [new]; false when it is refused and must be reverted. */
-    internal fun accept(new: String): Boolean {
-        val s = session
-        if (s == null || closing) return false
-        val change = s.change(new)
-        when (change) {
-            is EditorSession.Change.Applied -> if (s.isDirty()) scheduleSave()
-            is EditorSession.Change.Refused -> notice = change.reason
+    fun detach(editor: EditorSink) {
+        if (sink === editor) sink = null
+    }
+
+    /** The editor's view of the open document: every change through the core first (E13). */
+    val host = object : EditorHost {
+        override fun fits(start: Int, end: Int, insert: String): Boolean {
+            val s = session ?: return false
+            if (closing) return false  // read-only while a close writes the text (D4)
+            if (s.fits(start, end, insert)) return true
+            notice = "The document cannot grow past ${s.limitMiB()} MiB."
+            return false
         }
+
+        override fun edited(start: Int, oldEnd: Int, insert: String, text: CharSequence): Edited? {
+            val s = session ?: return null
+            val m = highlight ?: return null
+            val edited = when (val change = s.edit(start, oldEnd, insert)) {
+                is EditorSession.Change.Applied -> change.result?.let { r ->
+                    val redraw = m.didEdit(text, start, oldEnd, insert.length, r.line.toInt(), r.removedLines.toInt(), r.insertedLines.toInt())
+                    Edited(r.line.toInt(), r.removedLines.toInt(), r.insertedLines.toInt(), redraw)
+                }
+                is EditorSession.Change.Refused -> {
+                    // A change that bypassed the gate: the editor's text is the truth now.
+                    Log.w(TAG, "the core refused a change the editor made (${change.reason}); resyncing")
+                    s.resync(text.toString())
+                    m.reset(text)
+                    null
+                }
+            }
+            afterChange(s)
+            return edited
+        }
+
+        override fun selectionChanged(start: Int, end: Int, text: CharSequence): List<IntRange> {
+            selectionStart = start
+            selectionEnd = end
+            caretTick++
+            val m = highlight ?: return emptyList()
+            if (text.length != m.lines.length) return emptyList()
+            return m.spotlight(preferences.focus, text, end)
+        }
+
+        override fun undo() = command(Command.UNDO)
+        override fun redo() = command(Command.REDO)
+    }
+
+    /** The open document's text, for an editor being made (open, rotation, a change of view). */
+    fun editorText(): String = session?.text ?: ""
+
+    /** A user edit that makes the text [new] (tests: what the editor reports); false when refused. */
+    internal fun accept(new: String): Boolean {
+        val s = session ?: return false
+        val edit = diff(s.text, new) ?: return true
+        if (!host.fits(edit.start, edit.end, edit.insert)) return false
+        host.edited(edit.start, edit.end, edit.insert, new)
+        return true
+    }
+
+    private fun afterChange(s: EditorSession) {
+        if (s.isDirty()) scheduleSave()
         updateStatus()
-        return change is EditorSession.Change.Applied
+        updateEditState()
+        caretTick++
+        refreshPreview(reparse = true)
+    }
+
+    /** Undo state and statistics, the statistics after a pause (they count the whole text). */
+    private fun updateEditState() {
+        val s = session ?: return
+        canUndo = s.canUndo()
+        canRedo = s.canRedo()
+        statsJob?.cancel()
+        statsJob = viewModelScope.launch {
+            delay(STATS_DELAY_MS)
+            val st = s.stats()
+            stats = "${st.words} words · ${st.characters} characters · ${st.readingTime}"
+        }
+    }
+
+    /** Apply a change from the core's history to the editor and the highlighting (E12). */
+    private fun applyCoreChange(s: EditorSession, change: TextChange) {
+        val editor = sink
+        if (editor != null) {
+            editor.apply(change)
+        } else {
+            val start = change.utf16.start.toInt()
+            highlight?.didEdit(s.text, start, change.utf16.end.toInt(), change.text.length, change.line.toInt(),
+                change.removedLines.toInt(), change.insertedLines.toInt())
+            selectionStart = change.caretUtf16.toInt()
+            selectionEnd = selectionStart
+        }
+        afterChange(s)
+    }
+
+    /** A keyboard shortcut or a menu item (K1). */
+    fun command(c: Command) {
+        val p = preferences
+        when (c) {
+            Command.MENU -> menuOpen = !menuOpen
+            Command.SPOTLIGHT -> updatePreferences(p.copy(focus = nextFocus(p.focus)))
+            Command.ANCHOR -> updatePreferences(p.copy(typewriter = !p.typewriter))
+            Command.THEME -> updatePreferences(p.copy(theme = nextTheme(p.theme)))
+            Command.FONT -> updatePreferences(p.copy(font = nextFont(p.font)))
+            Command.ZOOM_IN -> zoom(1f)
+            Command.ZOOM_OUT -> zoom(-1f)
+            Command.VIEW -> setView(nextView(viewMode))
+            Command.UNDO -> session?.let { s -> if (!closing) s.undo()?.let { applyCoreChange(s, it) } }
+            Command.REDO -> session?.let { s -> if (!closing) s.redo()?.let { applyCoreChange(s, it) } }
+            Command.NEW -> if (session == null) newDocument() else closeEditor(then = ::newDocument)
+            Command.OPEN, Command.CLOSE -> closeEditor()
+            Command.IMPORT -> Unit  // the activity starts the system picker
+        }
+    }
+
+    /** One point larger or smaller, within the core's limits (E3). */
+    private fun zoom(step: Float) {
+        val l = limits()
+        val size = Math.round(preferences.size + step).toFloat().coerceIn(l.minSize, l.maxSize)
+        if (size != preferences.size) updatePreferences(preferences.copy(size = size))
+    }
+
+    fun setView(mode: ViewMode) {
+        if (mode == viewMode) return
+        viewMode = mode
+        hint = null
+        refreshPreview(reparse = false)
+    }
+
+    /** Someone typed or tapped in the preview: say where writing happens (V6). */
+    fun previewNeedsHint() {
+        if (viewMode == ViewMode.EDITOR) return
+        hint = if (viewMode == ViewMode.PREVIEW) "Preview: press Ctrl+Shift+P or tap Edit to write" else "This is the preview: type in the editor"
+        hintJob?.cancel()
+        hintJob = viewModelScope.launch {
+            delay(HINT_MS)
+            hint = null
+        }
+    }
+
+    /**
+     * Bring the preview up to date (V5). [reparse]: the text just changed, so any parse running
+     * is stale from now on and is never shown; a new one follows a pause in typing. Blocks from
+     * an older revision are never reused. Only the look changed: the blocks render again.
+     * Nothing is parsed in Editor view.
+     */
+    fun refreshPreview(reparse: Boolean) {
+        if (reparse) {
+            previewGeneration++
+            previewJob?.cancel()
+        }
+        val s = session
+        val look = previewLook
+        if (s == null || look == null || viewMode == ViewMode.EDITOR) {
+            previewJob?.cancel()
+            return
+        }
+        val revision = s.revision()
+        val blocks = previewBlocks?.takeIf { previewRevision == revision }
+        if (blocks != null && renderedLook == look && preview != null) return
+        previewJob?.cancel()
+        val generation = ++previewGeneration
+        previewJob = viewModelScope.launch {
+            if (reparse) delay(PREVIEW_DELAY_MS)
+            val text = if (blocks == null) s.text else null
+            val (parsed, rendered) = withContext(previewLane) {
+                val b = blocks ?: preview(text!!)
+                b to PreviewRenderer.render(b, look, faces)
+            }
+            // Published only if nothing newer started and the text is still the one parsed.
+            if (generation != previewGeneration || session !== s || s.revision() != revision) return@launch
+            previewBlocks = parsed
+            previewRevision = revision
+            renderedLook = look
+            preview = rendered
+        }
     }
 
     private fun scheduleSave() {
@@ -305,8 +530,8 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         }
     }
 
-    /** Back to the start screen once the text is on disk; a failed save keeps the document open (D3). */
-    fun closeEditor() {
+    /** Back to the start screen once the text is on disk, then [then]; a failed save keeps the document open (D3). */
+    fun closeEditor(then: (() -> Unit)? = null) {
         val s = session ?: return
         if (closing) return
         closing = true
@@ -321,9 +546,14 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             }
             session = null
             s.close()
+            highlight?.close()
+            highlight = null
+            preview = null
+            menuOpen = false
             saved.remove<String>(OPEN_KEY)
             screen = Screen.Start
             refresh()
+            then?.invoke()
         }
     }
 
@@ -396,8 +626,8 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     private fun caretState(): Bundle {
         if (session == null) return restoredCaret ?: Bundle()
         return Bundle().apply {
-            putInt(START, field.selection.start)
-            putInt(END, field.selection.end)
+            putInt(START, selectionStart)
+            putInt(END, selectionEnd)
         }
     }
 
@@ -414,7 +644,9 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     // ---- Settings
 
     fun updatePreferences(new: Preferences) {
+        val old = preferences
         preferences = new
+        if (new.focus != old.focus) sink?.refreshSpotlight()
         viewModelScope.launch {
             val failure = withContext(io) {
                 StateFile.write(app.preferencesFile, serializePreferences(new).toByteArray(Charsets.UTF_8))
@@ -446,6 +678,8 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             it.close()
         }
         session = null
+        highlight?.close()
+        highlight = null
     }
 
     private fun describe(e: Throwable): String = when (e) {
@@ -478,5 +712,9 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         private const val START = "start"
         private const val END = "end"
         private const val AUTOSAVE_DELAY_MS = 800L
+        private const val STATS_DELAY_MS = 150L
+        private const val PREVIEW_DELAY_MS = 150L
+        private const val HINT_MS = 2500L
+        private const val TAG = "SlowpageShell"
     }
 }

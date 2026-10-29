@@ -45,8 +45,8 @@ class EditorSessionTest {
         // The core normalises line endings on load only; an edit is kept as given.
         val name = store.createUntitled()
         EditorSession.open(store, name).use { s ->
-            val applied = s.change("x\r\ny") as EditorSession.Change.Applied
-            assertEquals("x\r\ny", applied.text)
+            assertTrue(s.change("x\r\ny") is EditorSession.Change.Applied)
+            assertEquals("x\r\ny", s.text)
             assertEquals(s.coreText(), s.text)
             s.save()
         }
