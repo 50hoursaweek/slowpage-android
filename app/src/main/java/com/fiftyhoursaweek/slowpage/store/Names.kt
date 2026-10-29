@@ -44,7 +44,7 @@ object Names {
 
     /**
      * A name for an imported file, from the provider's display name: the iPad rules, with
-     * anything they refuse made acceptable (characters replaced, leading dots dropped, the
+     * anything they refuse made acceptable (characters and control characters replaced, leading dots dropped, the
      * base shortened at a character), falling back to "Imported". Keeps `.md` and `.txt`;
      * anything else gets `.md`.
      */
@@ -55,7 +55,8 @@ object Names {
             base = raw
             ext = EXTENSION
         }
-        base = base.replace(Regex("[/:\\u0000]"), "-").trimStart('.').trim()
+        // Control characters too (CR, LF, tab, …): the recent list keeps one name per line.
+        base = base.replace(Regex("[/:\\p{Cc}]"), "-").trimStart('.').trim()
         if (base.isEmpty()) base = "Imported"
         // Room for " 99999." and the extension within 255 bytes.
         val room = MAX_BYTES - " 99999.".length - ext.length

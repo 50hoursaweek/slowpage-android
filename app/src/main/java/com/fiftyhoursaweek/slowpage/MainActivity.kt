@@ -60,6 +60,8 @@ class MainActivity : ComponentActivity() {
                         vm.notice = null
                     }
                 }
+                // The stored volume arrives after onStart on a cold start (Codex MINOR 3).
+                LaunchedEffect(vm.preferences.musicVolume) { music.setVolume(vm.preferences.musicVolume) }
                 BackHandler(enabled = vm.screen != Screen.Start) { vm.back() }
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding().imePadding()) {
                     when (val screen = vm.screen) {
@@ -92,7 +94,6 @@ class MainActivity : ComponentActivity() {
                             problems = vm.problems,
                             onChange = { p ->
                                 vm.updatePreferences(p)
-                                music.setVolume(p.musicVolume)
                             },
                             onBack = { vm.back() },
                         )

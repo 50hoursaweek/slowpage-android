@@ -47,4 +47,10 @@ class NamesTest {
         assert(longest.toByteArray().size <= 255)
         assertEquals(base, String(base.toByteArray(), Charsets.UTF_8))  // no broken character
     }
+
+    @Test fun lineBreaksAndOtherControlCharactersInAnImportNameAreReplaced() {
+        // Codex phase 3 MINOR 5: a provider's display name must not split the recent list.
+        val (base, ext) = Names.forImport("Two\r\nlines\tand\u0085more.md")
+        assertEquals("Two--lines-and-more" to "md", base to ext)
+    }
 }

@@ -83,4 +83,14 @@ class RecentsTest {
         problems.report(StateProblems.Kind.RECENTS, null)
         assertTrue(problems.lines().isEmpty())
     }
+
+    @Test fun aNameWithALineBreakIsNeitherAddedNorRead() {
+        val recents = Recents(file)
+        recents.add("a\nb.md")
+        recents.add("c\r.md")
+        recents.add("ok.md")
+        assertEquals(listOf("ok.md"), recents.names())
+        file.writeText("${Recents.HEADER}\nok.md\nbad\r\n")
+        assertEquals(listOf("ok.md"), Recents(file).names())
+    }
 }

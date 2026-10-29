@@ -13,15 +13,18 @@ import kotlin.concurrent.thread
  */
 class Music(private val context: Context) {
     private var generation = 0
+    /** The latest volume asked for; setup reads it after the engine exists, so none is lost. */
+    @Volatile private var volume = 1f
 
     /** Setup runs off the main thread; the stream starts only if no [stop] came meanwhile. */
     fun start(volume: Float, onResult: (String) -> Unit) {
+        this.volume = volume
         val current = ++generation
         thread(name = "music-start") {
             val prepared = runCatching {
                 val engine = engine(context.applicationContext)
-                engine.setMusicVolume(volume)
                 engine.setMusic(MusicChoice.Bundled(TRACK))
+                engine.setMusicVolume(this.volume)
             }
             prepared.exceptionOrNull()?.let { Log.e(TAG, "music setup failed", it) }
             android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -43,6 +46,7 @@ class Music(private val context: Context) {
     }
 
     fun setVolume(volume: Float) {
+        this.volume = volume
         shared?.setMusicVolume(volume)
     }
 

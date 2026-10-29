@@ -25,7 +25,10 @@ echo "hushhour-ipad at $(git -C "$WORK" rev-parse HEAD)"
 
 cd "$WORK/HushHourCore"
 # The soname lets the Android linker and JNA agree on one copy (one MIXER static).
-RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-soname,libhushhour_ipad.so" \
+# Panic messages carry source paths: map this Mac's folders to neutral ones (Codex phase 3 MINOR 8).
+# The last matching prefix wins, so the general one comes first.
+REMAP="--remap-path-prefix=$HOME=/home --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$WORK=/src"
+RUSTFLAGS="${RUSTFLAGS:-} $REMAP -C link-arg=-Wl,-soname,libhushhour_ipad.so" \
     cargo ndk -t arm64-v8a -P 26 -o "$OUT/jniLibs" build --release --lib --locked
 
 # The same crate for this Mac, so JVM unit tests can drive the core through the same

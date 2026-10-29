@@ -2,11 +2,12 @@
 
 ## Done
 - Gate A: closed (Francesco heard the music; CLOSED-AGREED 2026-10-29 in `audit/LATEST.md`).
+- Phase 3 F1–F4: all PASS on the tablet (Francesco, 2026-10-29).
 - Phase 3 shell, first usable build (d744632), F1 first attempt (e38086c, not fixed on the tablet).
 - Emulator installed on `/Volumes/Expansion/hushhour-android-emulator` (sdk: emulator, platform-tools, AOSP arm64 API 31 image; AVD `slowpage-tablet` in `avd/`, 2000x1200, 240 dpi, landscape, no hardware keyboard; `user-home/` for ANDROID_USER_HOME).
 
 ## In progress
-- Phase 3 F1–F4 APK with Francesco for a retest (SHA-256 5cf4d28a…, see `audit/phase-3/fixes.md`). F2, F3, F4 checked on the emulator; F1 and F4 do not reproduce there even on the old build, so both still need the tablet. The editor shows a focus readout line for that retest.
+- Phase 3 Codex round 1 answered (`audit/phase-3/round-1-claude.md`): BLOCKING 1 and MINOR 1–6, 8 fixed and checked on the emulator; MINOR 7 (release signing key) waits for Francesco. APK built with `scripts/release-apk.sh` (R8, under 30 MiB).
 
 ## Emulator
 - `/Volumes/Expansion/hushhour-android-emulator`. Start (stdin detached, ANDROID_HOME must point there too, the profile sets it to the old SDK):
@@ -17,5 +18,4 @@
 - Nothing.
 
 ## Next
-- Francesco retests F1–F4 on the tablet. If F1 still fails, a photo of the readout line, or the tablet on USB to this Mac for adb, would settle it.
-- Then the end-of-phase Codex audit.
+- Codex round 2 (or PMO's ruling) on round 1; Francesco's decision on the release key (MINOR 7).

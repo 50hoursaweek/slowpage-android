@@ -35,6 +35,7 @@ class Recents(private val file: File) {
 
     /** Put [name] first. Call [persist] to write the list. */
     fun add(name: String) {
+        if (!isPlausible(name)) return  // a name that would break the one-per-line file
         names.remove(name)
         names.add(0, name)
         while (names.size > LIMIT) names.removeAt(names.size - 1)
@@ -61,8 +62,8 @@ class Recents(private val file: File) {
         const val LIMIT = 8
         const val HEADER = "slowpage-recents 1"
 
-        /** A bare file name: never a path, so a damaged file cannot point outside the store. */
+        /** A bare file name on one line: never a path, so a damaged file cannot point outside the store. */
         private fun isPlausible(name: String) =
-            '/' !in name && '\u0000' !in name && name != "." && name != ".." && !name.startsWith(".")
+            '/' !in name && name.none { it.isISOControl() } && name != "." && name != ".." && !name.startsWith(".")
     }
 }

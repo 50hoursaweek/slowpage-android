@@ -29,7 +29,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Sideloaded internal builds: signed with the debug key until Francesco decides on a key.
             signingConfig = signingConfigs.getByName("debug")
         }
@@ -55,6 +57,8 @@ android {
         unitTests.all {
             it.systemProperty("jna.library.path", rustOut.resolve("host").absolutePath)
             it.systemProperty("slowpage.assets", rustOut.resolve("assets").absolutePath)
+            // Robolectric's android.system.SystemCleaner (used by the UniFFI bindings) needs it.
+            it.jvmArgs("--add-exports", "java.base/jdk.internal.ref=ALL-UNNAMED")
         }
     }
 
