@@ -7,16 +7,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,6 +45,13 @@ fun EditorScreen(
     onExport: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // F1: on New and on Open the caret is in the text with the keyboard up.
+    LaunchedEffect(name) {
+        focus.requestFocus()
+        keyboard?.show()
+    }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onClose, enabled = !readOnly) { Text("‹ Documents") }
@@ -55,15 +66,25 @@ fun EditorScreen(
             )
             TextButton(onClick = onExport) { Text("Export…") }
         }
-        Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
-            BasicTextField(
-                value = field,
-                onValueChange = onChange,
-                readOnly = readOnly,
-                textStyle = TextStyle(color = colors.onBackground, fontSize = textSize.sp, lineHeight = (textSize * lineHeight).sp),
-                cursorBrush = SolidColor(colors.onBackground),
-                modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth().padding(horizontal = 32.dp, vertical = 24.dp),
-            )
-        }
+        // F1: the field itself covers the whole page, margins included, so a tap anywhere
+        // focuses it and places the caret (below the text: at the end). It scrolls itself.
+        BasicTextField(
+            value = field,
+            onValueChange = onChange,
+            readOnly = readOnly,
+            textStyle = TextStyle(color = colors.onBackground, fontSize = textSize.sp, lineHeight = (textSize * lineHeight).sp),
+            cursorBrush = SolidColor(colors.onBackground),
+            modifier = Modifier.fillMaxSize().focusRequester(focus).testTag(EDITOR_TAG),
+            decorationBox = { inner ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                    Box(Modifier.widthIn(max = 760.dp).fillMaxWidth().padding(horizontal = 32.dp, vertical = 24.dp)) {
+                        inner()
+                    }
+                }
+            },
+        )
     }
 }
+
+/** Test tag of the text area. */
+const val EDITOR_TAG = "editor"

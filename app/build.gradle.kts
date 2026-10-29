@@ -51,6 +51,7 @@ android {
     testOptions {
         // The bindings' cleaner checks Build.VERSION; the android.jar stubs return defaults.
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
         unitTests.all {
             it.systemProperty("jna.library.path", rustOut.resolve("host").absolutePath)
         }
@@ -80,6 +81,11 @@ dependencies {
     implementation("androidx.annotation:annotation:1.10.0")
 
     testImplementation("junit:junit:4.13.2")
+    // Compose UI tests on the JVM (Robolectric): focus and taps in the editor (F1).
+    testImplementation(platform("androidx.compose:compose-bom:2026.06.01"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("org.robolectric:robolectric:4.16.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     // JVM unit tests load the host build of the core (rust-out/host) through the same bindings.
     testImplementation("net.java.dev.jna:jna:5.19.1")
 }
