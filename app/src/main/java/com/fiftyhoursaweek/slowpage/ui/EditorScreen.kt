@@ -190,11 +190,13 @@ private fun EditorPane(vm: ShellViewModel, panes: Panes, look: Look, side: Int, 
             val editor = page.findViewById<EditorText>(R.id.editor)
             editor.bind(vm.host, model, vm.faces)
             editor.setLook(look, side, top)
-            editor.load(vm.editorText(), vm.selectionStart, vm.selectionEnd)
+            // F1: on New and on Open the caret is in the text with the keyboard up, once the
+            // text is all in (a long one goes in a piece at a time).
+            editor.load(vm.editorText(), vm.selectionStart, vm.selectionEnd) {
+                if (vm.viewMode != ViewMode.PREVIEW) focusEditor(editor)
+            }
             vm.attach(editor)
             panes.editor = editor
-            // F1: on New and on Open the caret is in the text with the keyboard up.
-            if (vm.viewMode != ViewMode.PREVIEW) editor.post { focusEditor(editor) }
             page
         },
         update = { page ->

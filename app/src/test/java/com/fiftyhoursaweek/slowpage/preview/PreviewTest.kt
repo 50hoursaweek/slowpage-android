@@ -86,5 +86,10 @@ class PreviewTest {
         assertEquals("lines stay exact at the end", ((repeats - 1) * unitLines).toULong(), blocks.last { it.kind == PreviewKind.Heading(2u) }.line)
         assertTrue("linear; off the main thread in the app (took $seconds s)", seconds < 30)
         assertFalse(rendered.blocks.isEmpty())
+        // Each block is styled when the list first shows it; all of them stay linear too.
+        val styling = System.nanoTime()
+        assertTrue(rendered.text.length > text.length / 2)
+        assertTrue("styled linearly", (System.nanoTime() - styling) / 1e9 < 30)
+        assertTrue("styled once", rendered.blocks[3] === rendered.blocks[3])
     }
 }

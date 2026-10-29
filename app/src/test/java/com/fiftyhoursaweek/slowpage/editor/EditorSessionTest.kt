@@ -66,6 +66,30 @@ class EditorSessionTest {
         }
     }
 
+    @Test fun theQuickFitCheckAgreesWithTheCoreAtTheLimit() {
+        val name = store.createUntitled()
+        EditorSession.open(store, name).use { s ->
+            val limit = 20 * 1024 * 1024
+            val nearly = "a".repeat(limit - 2)
+            assertTrue(s.change(nearly) is EditorSession.Change.Applied)
+            assertTrue("two bytes fit", s.fits(nearly.length, nearly.length, "é"))
+            assertFalse("three do not", s.fits(nearly.length, nearly.length, "✓"))
+            assertTrue("a replacement that does not grow fits", s.fits(0, 1, "b"))
+            assertTrue(s.edit(nearly.length, nearly.length, "é") is EditorSession.Change.Applied)
+            assertFalse("at the limit nothing more fits", s.fits(0, 0, "a"))
+        }
+    }
+
+    @Test fun jobsThatOutliveTheDocumentGetNothingOnceItIsClosed() {
+        val s = EditorSession.open(store, store.createUntitled())
+        s.change("one two")
+        assertEquals(2uL, s.statsUnlessClosed()!!.words)
+        s.close()
+        assertEquals(null, s.statsUnlessClosed())
+        assertEquals(null, s.textUnlessClosed())
+        s.close()  // twice is harmless
+    }
+
     @Test fun aFailedSaveIsShownWithItsReasonAndTheTextIsKeptForTheNextTry() {
         val name = store.createUntitled()
         EditorSession.open(store, name).use { s ->

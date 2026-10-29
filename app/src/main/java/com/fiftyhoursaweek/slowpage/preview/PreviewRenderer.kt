@@ -54,7 +54,9 @@ data class PreviewLook(val theme: Theme, val font: FontChoice, val sizePx: Float
 /**
  * The preview as one styled text per block, shown in a list that lays out only the blocks on
  * screen: building one long text is quadratic in its spans on Android, and a TextView lays
- * out all of it at once (a 1 MB document took minutes).
+ * out all of it at once (a 1 MB document took minutes). A block is styled when it is first
+ * asked for, so a large preview shows once parsed (round 1, F2: styling every block of 5 MB
+ * first took as long as the parse).
  */
 class RenderedPreview(
     val blocks: List<CharSequence>,
@@ -117,8 +119,7 @@ object PreviewRenderer {
         val indentStep = (size * 1.6f).roundToInt()
         val spacing = (size * 0.7f).roundToInt()
 
-        val lines = IntArray(blocks.size)
-        val texts = ArrayList<CharSequence>(blocks.size)
+        val lines = IntArray(blocks.size) { blocks[it].line.toInt() }
         var out = SpannableStringBuilder()
 
         fun paragraph(start: Int, depth: Int, marker: Boolean, before: Int, height: Int, centred: Boolean = false) {
@@ -131,10 +132,9 @@ object PreviewRenderer {
             if (centred) out.setSpan(AlignmentSpan.Standard(Layout.Alignment.ALIGN_CENTER), start, end, Spanned.SPAN_PARAGRAPH)
         }
 
-        blocks.forEachIndexed { i, block ->
+        fun one(block: PreviewBlock): CharSequence {
             out = SpannableStringBuilder()
             val start = 0
-            lines[i] = block.line.toInt()
             val depth = (block.quoteDepth + block.listDepth).toInt()
             val colour = if (block.quoteDepth > 0u) muted else text
             block.marker?.let { marker ->
@@ -168,9 +168,16 @@ object PreviewRenderer {
                     paragraph(start, 0, false, 0, (size * look.lineHeight).roundToInt(), centred = true)
                 }
             }
-            texts += out
+            return out
         }
-        return RenderedPreview(texts, lines)
+        return RenderedPreview(Styled(blocks, ::one), lines)
+    }
+
+    /** The blocks, each styled once, when first asked for (on the main thread, as the list shows it). */
+    private class Styled(private val blocks: List<PreviewBlock>, private val style: (PreviewBlock) -> CharSequence) : AbstractList<CharSequence>() {
+        private val done = arrayOfNulls<CharSequence>(blocks.size)
+        override val size get() = blocks.size
+        override fun get(index: Int): CharSequence = done[index] ?: style(blocks[index]).also { done[index] = it }
     }
 
     private fun styled(out: SpannableStringBuilder, s: String, face: Typeface, size: Float, colour: Int) {

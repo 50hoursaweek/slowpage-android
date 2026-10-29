@@ -1,6 +1,7 @@
 package com.fiftyhoursaweek.slowpage.editor
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -8,6 +9,7 @@ import android.os.Build
 import android.text.Editable
 import android.text.InputFilter
 import android.text.InputType
+import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextPaint
 import android.text.TextWatcher
@@ -102,8 +104,14 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
 
     /** The text a same-length change replaces: a refused change comes back as a no-op replacement. */
     private var removed: String? = null
+    /** A change that would split a character, widened to whole characters; made once the no-op it became is done. */
+    private var widened: Triple<Int, Int, String>? = null
 
     init {
+        // The buffer [load] makes is the editor's own: copying it would double a large text.
+        setEditableFactory(object : Editable.Factory() {
+            override fun newEditable(source: CharSequence): Editable = source as? SpannableStringBuilder ?: super.newEditable(source)
+        })
         background = null
         gravity = Gravity.TOP or Gravity.START
         isVerticalScrollBarEnabled = true
@@ -119,11 +127,15 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
     /** The page that scrolls the editor (the layout's ScrollView); without one the editor scrolls itself. */
     private val page: ScrollView? get() = parent as? ScrollView
     private fun viewportHeight() = page?.height ?: height
-    private fun viewportTop() = page?.scrollY ?: scrollY
+    /** The top of what shows, in the editor's own coordinates (the page's padding is the anchor's space). */
+    private fun viewportTop() = page?.let { it.scrollY - it.paddingTop } ?: scrollY
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        page?.setOnScrollChangeListener { _, _, _, _, _ -> drawVisible() }
+        page?.setOnScrollChangeListener { _, _, _, _, _ ->
+            drawVisible()
+            invalidate()  // the drawing is clipped to the screen ([onDraw]); a scroll moves the clip
+        }
         page?.addOnLayoutChangeListener(pageLayout)
     }
 
@@ -154,25 +166,103 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
     fun unbind() {
         host = null
         model = null
+        removeCallbacks(nextPiece)
+        loadingText = null
+        loaded = null
     }
 
     // ---- Text from the core
 
     /** Show [text] (the core's, after open or a reload); the caret at [selStart]..[selEnd]. */
-    fun load(text: String, selStart: Int, selEnd: Int) {
+    /**
+     * Show [text] (the core's, after open or a reload); the caret at [selStart]..[selEnd], then
+     * [then] (posted). A long text goes in a piece at a time, each ending at a line break, one
+     * piece per pass of the main loop (round 1, F3 and BLOCKING 3): the platform lays out a
+     * whole text at once with an object per paragraph, which ran a 19 MiB document out of
+     * memory and held the main thread past the ANR limit. Until the last piece is in, the
+     * editor takes no input ([loading]); highlighting and the caret come with the last piece.
+     */
+    fun load(text: String, selStart: Int, selEnd: Int, then: (() -> Unit)? = null) {
+        removeCallbacks(nextPiece)
+        val first = pieceEnd(text, 0)
+        // Sized for the whole text once, so the pieces never make it grow (and copy).
+        val buffer = SpannableStringBuilder(text)
+        if (first < text.length) buffer.delete(first, text.length)
         applying = true
         try {
-            setText(text, BufferType.EDITABLE)
+            setText(buffer, BufferType.EDITABLE)
         } finally {
             applying = false
         }
+        loadingText = if (first < text.length) text else null
+        loadedTo = first
+        loadSelection = selStart to selEnd
+        loaded = then
+        if (loadingText != null) post(nextPiece) else finishLoad()
+    }
+
+    /** Whether a long text is still going in ([load]); the editor refuses input until it is. */
+    val loading get() = loadingText != null
+    private var loadingText: String? = null
+    private var loadedTo = 0
+    private var loadSelection = 0 to 0
+    private var loaded: (() -> Unit)? = null
+
+    private val nextPiece = object : Runnable {
+        override fun run() {
+            if (loadingText == null) return
+            appendPiece()
+            if (loadingText != null) post(this) else finishLoad()
+        }
+    }
+
+    private fun appendPiece() {
+        val text = loadingText ?: return
+        val end = pieceEnd(text, loadedTo)
+        applying = true
+        try {
+            editableText.append(text, loadedTo, end)
+        } finally {
+            applying = false
+        }
+        loadedTo = end
+        if (end >= text.length) loadingText = null
+    }
+
+    /** All of a text still going in, now: a change from the core needs the whole text. */
+    private fun finishLoading() {
+        if (loadingText == null) return
+        removeCallbacks(nextPiece)
+        while (loadingText != null) appendPiece()
+        finishLoad()
+    }
+
+    private fun finishLoad() {
+        val length = editableText.length
         resetDrawn(model?.lines?.lineCount ?: 1)
-        setSelection(selStart.coerceIn(0, text.length), selEnd.coerceIn(0, text.length))
-        post { drawVisible() }
+        val (a, b) = loadSelection
+        setSelection(a.coerceIn(0, length), b.coerceIn(0, length))
+        val then = loaded
+        loaded = null
+        post {
+            drawVisible()
+            then?.invoke()
+        }
+    }
+
+    /** The end of the piece of [text] from [start]: about [PIECE] units, just after a line break (or the end). */
+    private fun pieceEnd(text: String, start: Int): Int {
+        if (text.length - start <= PIECE) return text.length
+        // A paragraph laid out across two pieces would be laid out again from its start.
+        val back = text.lastIndexOf('\n', start + PIECE)
+        if (back >= start) return back + 1
+        val forward = text.indexOf('\n', start + PIECE)
+        return if (forward < 0) text.length else forward + 1
     }
 
     /** Apply a change the core made (undo, redo): the text, the line table, the caret. */
     override fun apply(change: TextChange) {
+        finishLoading()
         val e = editableText ?: return
         val start = change.utf16.start.toInt()
         val end = change.utf16.end.toInt()
@@ -204,14 +294,33 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
 
     private fun gate(source: CharSequence, start: Int, end: Int, dest: Spanned, dstart: Int, dend: Int): CharSequence? {
         if (applying) return null
+        if (loading) return dest.subSequence(dstart, dend)  // the text is not all in yet
         val inserted = source.subSequence(start, end)
-        // The core keeps LF endings; paste may bring others.
-        val clean = if (inserted.any { it == '\r' || it == ' ' || it == ' ' }) {
-            inserted.toString().replace("\r\n", "\n").replace('\r', '\n').replace(' ', '\n').replace(' ', '\n')
+        // The core keeps LF endings; paste may bring others. Half a character (a lone
+        // surrogate) is never let in: the core's text cannot hold one.
+        var clean = if (inserted.any { it == '\r' || it == '\u2028' || it == '\u2029' }) {
+            inserted.toString().replace("\r\n", "\n").replace('\r', '\n').replace('\u2028', '\n').replace('\u2029', '\n')
         } else {
             null
         }
+        if ((clean ?: inserted).any { Character.isSurrogate(it) }) clean = wholeCharacters(clean ?: inserted)
         val h = host ?: return null
+        // A keyboard may delete one UTF-16 unit of an emoji (deleteSurroundingText(1, 0)): the
+        // core would delete the whole character and the view keep half of it (round 1,
+        // BLOCKING 1). The change becomes a no-op, and the whole-character change follows
+        // from afterTextChanged. An insertion inside a pair (the caret is kept out of one,
+        // [onSelectionChanged]) changes nothing, so no watcher runs: it goes after the pair, posted.
+        val splitsStart = splits(dest, dstart)
+        val splitsEnd = splits(dest, dend)
+        if (splitsStart || splitsEnd) {
+            val text = (clean ?: inserted).toString()
+            if (dstart == dend) {
+                post { if (splits(editableText, dstart)) editableText.insert(dstart + 1, text) }
+            } else {
+                widened = Triple(if (splitsStart) dstart - 1 else dstart, if (splitsEnd) dend + 1 else dend, text)
+            }
+            return dest.subSequence(dstart, dend)
+        }
         if (!h.fits(dstart, dend, (clean ?: inserted).toString())) {
             return dest.subSequence(dstart, dend)
         }
@@ -242,6 +351,12 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
 
         override fun afterTextChanged(s: Editable) {
             if (applying) return
+            widened?.let { (start, end, text) ->
+                widened = null
+                // Through the gate and the mirror like any change.
+                s.replace(start, end, text)
+                return
+            }
             // The edited line now, so nothing typed shows unstyled; the rest when it shows.
             refreshSpotlight()
         }
@@ -263,9 +378,20 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
         drawnLast = -1
     }
 
+    /** Whether [offset] falls between the two halves of a surrogate pair. */
+    private fun splits(text: CharSequence, offset: Int) =
+        offset in 1 until text.length && Character.isHighSurrogate(text[offset - 1]) && Character.isLowSurrogate(text[offset])
+
     override fun onSelectionChanged(selStart: Int, selEnd: Int) {
         super.onSelectionChanged(selStart, selEnd)
-        if (!applying) refreshSpotlight()
+        // Never a caret inside a character (a keyboard or a tap can put one there).
+        val e = editableText
+        if (e != null && (splits(e, selStart) || splits(e, selEnd))) {
+            setSelection(if (splits(e, selStart)) selStart + 1 else selStart, if (splits(e, selEnd)) selEnd + 1 else selEnd)
+            return
+        }
+        // While a text goes in, the caret is where it will be put back, not where it is now.
+        if (!applying && !loading) refreshSpotlight()
     }
 
     /** The spotlight follows the caret (E10); the lines it left and reached are drawn again. */
@@ -296,6 +422,9 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
         val f = faces ?: return
         val p = palette(new.theme)
         val textColour = Colours.argb(p.text)
+        val old = look
+        // Whatever changes the width of the text or its metrics lays all of it out again.
+        val relayout = old != null && (new.font != old.font || new.sizePx != old.sizePx || new.lineHeight != old.lineHeight || side != sideInset)
         if (new != look) {
             look = new
             styleCache.clear()
@@ -309,6 +438,7 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
             }
             setTextColor(textColour)
             highlightColor = Colours.argb(Colours.selection(p))
+            // Before 29 the layout's @null cursor drawable draws the caret in the text colour.
             if (Build.VERSION.SDK_INT >= 29) {
                 textCursorDrawable = GradientDrawable().apply {
                     setColor(Colours.argb(Colours.caret(p)))
@@ -326,19 +456,60 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
         sideInset = side
         topInset = top
         updatePadding()
-        drawVisible()
+        if (relayout && editableText.length > PIECE) relayoutInPieces() else drawVisible()
     }
 
+    /**
+     * A long text laid out again (a new width in Split, zoom, a font) goes back in a piece at a
+     * time, as on open ([load]): laid out at once it held the main thread for seconds (round 1, F2).
+     */
+    private fun relayoutInPieces() {
+        val pending = loadingText
+        if (pending != null) {
+            // Already going in: start again at the new width, with the caret and the callback it had.
+            load(pending, loadSelection.first, loadSelection.second, loaded)
+        } else {
+            load(editableText.toString(), selectionStart, selectionEnd)
+        }
+    }
+
+    /**
+     * The page insets are the editor's padding; the anchor's space is the page's (drawn into,
+     * clipToPadding off), as a change of a text view's padding lays out all of its text again:
+     * seconds on a large document each time the keyboard came or went with the anchor on.
+     */
     private fun updatePadding() {
         val anchorSpace = if (typewriter) viewportHeight() / 2 else 0
-        if (paddingLeft != sideInset || paddingTop != topInset + anchorSpace || paddingBottom != topInset + anchorSpace) {
-            setPadding(sideInset, topInset + anchorSpace, sideInset, topInset + anchorSpace)
-        }
+        val p = page
+        val inner = if (p == null) topInset + anchorSpace else topInset
+        if (p != null && (p.paddingTop != anchorSpace || p.paddingBottom != anchorSpace)) p.setPadding(0, anchorSpace, 0, anchorSpace)
+        if (paddingLeft != sideInset || paddingTop != inner || paddingBottom != inner) setPadding(sideInset, inner, sideInset, inner)
     }
 
     /** Lines whose look changed (the spotlight moved): drawn again now if on screen. */
     fun redraw(ranges: List<IntRange>) {
         for (r in ranges) drawn.clear(r)
+    }
+
+    /**
+     * Only what is near the screen is drawn. In the page the editor is as tall as its text, so
+     * unclipped the platform records a display list for every block of the text (about 400
+     * characters each) and looks for a free one per edit across all of them: 70 ms a key in a
+     * 5 MB document (round 1, F1). The clip leaves a screen's margin above and below, so a
+     * fling shows text before the next frame records it.
+     */
+    override fun onDraw(canvas: Canvas) {
+        val p = page
+        if (p == null) {
+            super.onDraw(canvas)
+            return
+        }
+        val margin = p.height
+        val top = viewportTop()
+        canvas.save()
+        canvas.clipRect(0, top - margin, width, top + p.height + margin)
+        super.onDraw(canvas)
+        canvas.restore()
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -443,9 +614,9 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
         val target = Anchor.scrollFor(
             lineTop = layout.getLineTop(line),
             lineBottom = layout.getLineBottom(line),
-            paddingTop = totalPaddingTop,
+            paddingTop = totalPaddingTop + (page?.paddingTop ?: 0),
             viewHeight = viewport,
-            contentHeight = layout.height + totalPaddingTop + totalPaddingBottom,
+            contentHeight = layout.height + totalPaddingTop + totalPaddingBottom + (page?.let { it.paddingTop + it.paddingBottom } ?: 0),
         )
         val p = page
         if (p != null) {
@@ -477,7 +648,26 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
         const val TAG = "SlowpageEditor"
         const val MARGIN_LINES = 20
         const val KEEP_LINES = 300
+        /** A piece of a long text being loaded, in UTF-16 units: about 50 ms of layout on the emulator. */
+        const val PIECE = 256 * 1024
     }
+}
+
+/** [text] with any lone surrogate (half a character) replaced by U+FFFD. */
+internal fun wholeCharacters(text: CharSequence): String {
+    val out = StringBuilder(text.length)
+    var i = 0
+    while (i < text.length) {
+        val c = text[i]
+        if (Character.isHighSurrogate(c) && i + 1 < text.length && Character.isLowSurrogate(text[i + 1])) {
+            out.append(c).append(text[i + 1])
+            i += 2
+        } else {
+            out.append(if (Character.isSurrogate(c)) '\uFFFD' else c)
+            i++
+        }
+    }
+    return out.toString()
 }
 
 /** The anchor's scroll position (E11): the caret line's middle at the middle of the view, within the content. */

@@ -133,6 +133,11 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     private var previewBlocks: List<uniffi.hushhour.PreviewBlock>? = null
     private var renderedLook: PreviewLook? = null
     private var statsJob: Job? = null
+    /**
+     * The text just opened and the revision it is, for the editor about to be made; dropped once
+     * it has it (not held twice), and not used once the text has changed.
+     */
+    private var openedText: Pair<String, Pair<ULong, ULong>>? = null
     private var hintJob: Job? = null
     var status by mutableStateOf("")
         private set
@@ -231,9 +236,11 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
                     if (kept != null && (newest !== kept || kept.text == s.text) && !recovered) {
                         withContext(io) { recovery.clear(name) }
                     }
-                    val text = s.text
                     val font = preferences.font
-                    highlight = withContext(io) { HighlightModel(font).apply { reset(text) } }
+                    // Off the main thread: a 20 MiB copy out of the core (round 1, F3).
+                    val (text, model) = withContext(io) { s.text.let { it to HighlightModel(font).apply { reset(it) } } }
+                    highlight = model
+                    openedText = text to s.revision()
                     selectionStart = caret?.getInt(START)?.coerceIn(0, text.length) ?: 0
                     selectionEnd = caret?.getInt(END)?.coerceIn(0, text.length) ?: 0
                     viewMode = ViewMode.EDITOR
@@ -386,11 +393,16 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
 
         override fun undo() = command(Command.UNDO)
         override fun redo() = command(Command.REDO)
-        override fun coreText() = editorText()
+        override fun coreText() = session?.text ?: ""
     }
 
     /** The open document's text, for an editor being made (open, rotation, a change of view). */
-    fun editorText(): String = session?.text ?: ""
+    fun editorText(): String {
+        val s = session ?: return ""
+        val opened = openedText
+        openedText = null
+        return opened?.takeIf { it.second == s.revision() }?.first ?: s.text
+    }
 
     /** A user edit that makes the text [new] (tests: what the editor reports); false when refused. */
     internal fun accept(new: String): Boolean {
@@ -417,8 +429,9 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         statsJob?.cancel()
         statsJob = viewModelScope.launch {
             delay(STATS_DELAY_MS)
-            val st = s.stats()
-            stats = "${st.words} words · ${st.characters} characters · ${st.readingTime}"
+            // Off the main thread (the whole text is counted); null when a close came first (round 1, BLOCKING 2).
+            val st = withContext(Dispatchers.Default) { s.statsUnlessClosed() } ?: return@launch
+            if (session === s) stats = "${st.words} words · ${st.characters} characters · ${st.readingTime}"
         }
     }
 
@@ -506,11 +519,11 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         val generation = ++previewGeneration
         previewJob = viewModelScope.launch {
             if (reparse) delay(PREVIEW_DELAY_MS)
-            val text = if (blocks == null) s.text else null
             val (parsed, rendered) = withContext(previewLane) {
-                val b = blocks ?: preview(text!!)
+                // The text is copied here, not on the main thread; a close since leaves nothing to parse.
+                val b = blocks ?: preview(s.textUnlessClosed() ?: return@withContext null)
                 b to PreviewRenderer.render(b, look, faces)
-            }
+            } ?: return@launch
             // Published only if nothing newer started and the text is still the one parsed.
             if (generation != previewGeneration || session !== s || s.revision() != revision) return@launch
             previewBlocks = parsed
@@ -546,6 +559,9 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
                 return@launch
             }
             session = null
+            statsJob?.cancel()
+            previewJob?.cancel()
+            openedText = null
             s.close()
             highlight?.close()
             highlight = null
@@ -563,7 +579,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         val s = session ?: return
         saveJob?.cancel()
         val state = s.save()
-        if (!keepFiles(s, s.text, state)) warnUnkept(s, state)
+        if (!keepFiles(s, state)) warnUnkept(s, state)
         updateStatus()
     }
 
@@ -572,20 +588,21 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     /** Save [s] off the main thread, keeping the text when the save fails. */
     private suspend fun saveAndKeep(s: EditorSession): Persistence {
         val state = withContext(io) { s.save() }
-        val text = s.text
-        if (!withContext(io) { keepFiles(s, text, state) }) warnUnkept(s, state)
+        if (!withContext(io) { keepFiles(s, state) }) warnUnkept(s, state)
         return state
     }
 
     /**
-     * After a save: a failed one writes [text] to the recovery folder with the time, a good one
+     * After a save: a failed one writes the text to the recovery folder with the time, a good one
      * (nothing left unsaved) removes it. Blocking. False when the text is unsaved and the
      * recovery copy could not be written either; an older copy is left, as it is still newer
-     * than the disk, and the saved state ([draftState]) gets the text.
+     * than the disk, and the saved state ([draftState]) gets the text. The text is copied out
+     * of the core only for a failed save (a large one is not copied after every autosave).
      */
-    private fun keepFiles(s: EditorSession, text: String, state: Persistence): Boolean = when {
-        state is Persistence.Failed -> (recovery.write(s.name, text, System.currentTimeMillis()) == null)
-            .also { if (it) keptText = text }
+    private fun keepFiles(s: EditorSession, state: Persistence): Boolean = when {
+        state is Persistence.Failed -> s.text.let { text ->
+            (recovery.write(s.name, text, System.currentTimeMillis()) == null).also { if (it) keptText = text }
+        }
         !s.isDirty() -> {
             recovery.clear(s.name)
             keptText = null
@@ -675,7 +692,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     override fun onCleared() {
         session?.let {
             // The task is closing: a failed save leaves the recovery copy behind.
-            keepFiles(it, it.text, it.save())
+            keepFiles(it, it.save())
             it.close()
         }
         session = null

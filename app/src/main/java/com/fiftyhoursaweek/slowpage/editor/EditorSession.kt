@@ -23,10 +23,17 @@ class EditorSession private constructor(
 ) : AutoCloseable {
     private val saveLock = Any()
 
-    /** The text as the core holds it, copied out only when asked for (typing never needs it). */
-    @Volatile private var cached: String? = null
+    /** Held while the document is used off the main thread or closed, so a late job never reaches a closed one. */
+    private val closeLock = Any()
+    private var closed = false
+
+    /**
+     * The text as the core holds it, copied out each time: not kept, as the editor already
+     * holds it and a 20 MiB document would be held twice (round 1, BLOCKING 3). Typing never
+     * needs it; keep it off the main thread for a large document.
+     */
     val text: String
-        get() = cached ?: document.text().also { cached = it }
+        get() = document.text()
 
     sealed interface Change {
         /** Applied; [result] says which lines changed (null when nothing did). */
@@ -35,18 +42,25 @@ class EditorSession private constructor(
         data class Refused(val reason: String) : Change
     }
 
-    /** Whether replacing UTF-16 units `start until end` with [insert] keeps the document within the limit. */
-    fun fits(start: Int, end: Int, insert: String) = document.editFitsUtf16(start.toULong(), end.toULong(), insert)
+    /** [text] for a job off the main thread that may outlive the document: null once closed. */
+    fun textUnlessClosed(): String? = synchronized(closeLock) { if (closed) null else document.text() }
+
+    /**
+     * Whether replacing UTF-16 units `start until end` with [insert] keeps the document within
+     * the limit. Asked on every key: when even the largest growth the insert could bring (three
+     * UTF-8 bytes a unit) fits, the core is not asked, as it walks the text to the offset.
+     */
+    fun fits(start: Int, end: Int, insert: String): Boolean {
+        if (document.byteLen().toLong() + 3L * insert.length <= document.sizeLimit().toLong()) return true
+        return document.editFitsUtf16(start.toULong(), end.toULong(), insert)
+    }
 
     /** Replace UTF-16 units `start until end` with [insert], as the editor reports it. */
     fun edit(start: Int, end: Int, insert: String): Change {
         if (!fits(start, end, insert)) return Change.Refused(tooLarge())
         return try {
-            val result = document.editUtf16(start.toULong(), end.toULong(), insert)
-            cached = null
-            Change.Applied(result)
+            Change.Applied(document.editUtf16(start.toULong(), end.toULong(), insert))
         } catch (e: DocumentException) {
-            cached = null
             Change.Refused(e.message ?: "The change was refused.")
         }
     }
@@ -60,15 +74,17 @@ class EditorSession private constructor(
     /** The editor and the core disagree (a change that bypassed the gate): the editor's [new] text wins. */
     fun resync(new: String) {
         if (change(new) is Change.Refused) document.load(new)
-        cached = null
     }
 
-    fun undo(): TextChange? = document.undo().also { cached = null }
-    fun redo(): TextChange? = document.redo().also { cached = null }
+    fun undo(): TextChange? = document.undo()
+    fun redo(): TextChange? = document.redo()
     fun canUndo() = document.canUndo()
     fun canRedo() = document.canRedo()
 
     fun stats(): Stats = document.stats()
+
+    /** [stats] for a job that may outlive the document (it counts the whole text, off the main thread): null once closed. */
+    fun statsUnlessClosed(): Stats? = synchronized(closeLock) { if (closed) null else document.stats() }
 
     /** The revision a preview was parsed from (V5): a load changes the generation, an edit the count. */
     fun revision(): Pair<ULong, ULong> = document.generation() to document.edits()
@@ -97,7 +113,11 @@ class EditorSession private constructor(
 
     private fun tooLarge() = "This change would make the document larger than ${limitMiB()} MiB."
 
-    override fun close() = document.close()
+    override fun close() = synchronized(closeLock) {
+        if (closed) return
+        closed = true
+        document.close()
+    }
 
     companion object {
         /** Read [name] from the store and load it into a new core document. Blocking. */

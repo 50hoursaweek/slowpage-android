@@ -4,11 +4,15 @@
     <supports-screens android:smallScreens="false" android:normalScreens="false"
         android:largeScreens="true" android:xlargeScreens="true" />
 
-    <!-- allowBackup=false: S5, approved. -->
+    <!-- allowBackup=false: S5, approved.
+         largeHeap: a document may be 20 MiB (E13). The editor holds it as UTF-16 (40 MB), and
+         a save copies it out of the core and back in (saveSucceeded takes the text), so the
+         standard heap (192 MB on the API 31 emulator) ran out at 19 MiB (round 1, F3). -->
     <application
         android:name=".SlowpageApp"
         android:label="Slowpage"
         android:allowBackup="false"
+        android:largeHeap="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <!-- One window (L3): singleTask, one document at a time. -->
         <activity

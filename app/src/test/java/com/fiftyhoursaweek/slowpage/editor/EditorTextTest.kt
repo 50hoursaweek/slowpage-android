@@ -76,6 +76,7 @@ class EditorTextTest {
     private fun inStep() {
         assertEquals(editor.text.toString(), vm.editorText())
         assertEquals(LineTable(editor.text).starts(), vm.highlight!!.lines.starts())
+        assertEquals("never half a character", wholeCharacters(editor.text), editor.text.toString())
     }
 
     @Test fun composingCommitsAndDeletesFromTheKeyboardReachTheCore() {
@@ -144,6 +145,85 @@ class EditorTextTest {
         inStep()
     }
 
+    @Test fun aKeyboardDeletingHalfAnEmojiDeletesAllOfIt() {
+        // Round 1, BLOCKING 1: deleteSurroundingText counts UTF-16 units, so (1, 0) after an
+        // emoji removes only its low surrogate; the core would remove the whole emoji.
+        ic.commitText("a😀", 1)
+        ic.deleteSurroundingText(1, 0)
+        assertEquals("a", editor.text.toString())
+        assertEquals(1, editor.selectionEnd)
+        inStep()
+        ic.commitText("😀b", 1)
+        editor.setSelection(1)
+        ic.deleteSurroundingText(0, 1)  // the high surrogate, forward
+        assertEquals("ab", editor.text.toString())
+        inStep()
+        // The caret is never left between the two halves; an insertion there goes after the emoji.
+        ic.commitText("😀", 1)
+        editor.setSelection(2)
+        assertEquals(3, editor.selectionEnd)
+        ic.commitText("x", 1)
+        assertEquals("a😀xb", editor.text.toString())
+        inStep()
+        val emoji = editor.text.indexOf("😀")
+        editor.text.insert(emoji + 1, "y")  // as a keyboard could, whatever the caret
+        idle()
+        assertEquals("a😀yxb", editor.text.toString())
+        inStep()
+        // Pasted half characters become U+FFFD.
+        editor.setSelection(editor.text.length)
+        ic.commitText("c\uD83D", 1)
+        assertEquals("a😀yxbc\uFFFD", editor.text.toString())
+        inStep()
+        idle()
+    }
+
+    @Test fun aLongTextGoesInAPieceAtATimeAndTheEditorWaitsForIt() {
+        // Round 1, F3 and BLOCKING 3: a long text is laid out a piece at a time.
+        val line = "A line of prose for the long text, with **bold** and `code`.\n"
+        val long = line.repeat(3 * 256 * 1024 / line.length + 7)
+        assertTrue(vm.accept(long))
+        var ready = false
+        editor.load(vm.editorText(), 5, 5) { ready = true }
+        assertTrue(editor.loading)
+        assertTrue("only the first piece", editor.text.length < long.length)
+        assertEquals("the first piece ends at a line break", '\n', editor.text[editor.text.length - 1])
+        ic.commitText("refused", 1)  // no input until it is all in
+        until("all in") { !editor.loading && ready }
+        assertEquals(long, editor.text.toString())
+        assertEquals(5, editor.selectionEnd)
+        inStep()
+        ic.commitText("x", 1)
+        assertEquals(long.substring(0, 5) + "x" + long.substring(5), vm.editorText())
+        inStep()
+        // An undo during a load gets the whole text first.
+        editor.load(vm.editorText(), 0, 0)
+        assertTrue(editor.loading)
+        vm.command(Command.UNDO)
+        assertTrue(!editor.loading)
+        inStep()
+    }
+
+    @Test fun aLongTextLaidOutAgainGoesBackInPiecesAndKeepsTheCaret() {
+        // Round 1, F2: Split (a new width), zoom or a font lays a long text out again.
+        val line = "Prose for the long text, laid out again at a new width.\n"
+        val long = line.repeat(2 * 256 * 1024 / line.length + 3)
+        assertTrue(vm.accept(long))
+        editor.load(vm.editorText(), 1000, 1000)
+        until("all in") { !editor.loading }
+        editor.setLook(Look(Theme.LIGHT, FontChoice.MONO, 36f, 1.5f), 300, 40)  // narrower, as in Split
+        assertTrue(editor.loading)
+        editor.setLook(Look(Theme.DARK, FontChoice.MONO, 36f, 1.5f), 300, 40)  // a theme alone lays nothing out
+        until("all in again") { !editor.loading }
+        assertEquals(long, editor.text.toString())
+        assertEquals(1000, editor.selectionEnd)
+        inStep()
+        // The anchor's space is the page's padding: the editor's own padding stays the insets.
+        editor.typewriter = true
+        assertEquals(40, editor.paddingTop)
+        assertTrue(!editor.loading)
+    }
+
     @Test fun randomKeyboardInputInEverySpotlightModeKeepsEverythingInStep() {
         val pieces = listOf("a", " ", ". ", "\n", "\n\n", "*", "`", "```", "# ", "é", "’", "😀")
         val random = kotlin.random.Random(4)
@@ -153,9 +233,11 @@ class EditorTextTest {
                 val length = editor.text.length
                 val at = random.nextInt(length + 1).let { if (it > 0 && Character.isLowSurrogate(editor.text[minOf(it, length - 1)]) && it < length) it - 1 else it }
                 editor.setSelection(at)
-                when (random.nextInt(4)) {
+                when (random.nextInt(5)) {
                     0 -> ic.deleteSurroundingTextInCodePoints(1, 0)
-                    1 -> { ic.setComposingText(pieces.random(random), 1); ic.finishComposingText() }
+                    // In UTF-16 units, as many keyboards send it: may split an emoji (BLOCKING 1).
+                    1 -> ic.deleteSurroundingText(random.nextInt(3), random.nextInt(2))
+                    2 -> { ic.setComposingText(pieces.random(random), 1); ic.finishComposingText() }
                     else -> ic.commitText(pieces.random(random), 1)
                 }
                 inStep()

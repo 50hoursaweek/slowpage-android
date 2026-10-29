@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The editor (E9) in the page that scrolls it: the editor grows with its text, so its padding
-     (the page insets and the anchor's space, E11) is never clipped as a scrolling EditText clips it.
-     allowUndo="false": undo and redo are the core's, never the platform's (E12). -->
+     (the page insets) is never clipped as a scrolling EditText clips it. The anchor's space (E11)
+     is the page's padding, drawn into (clipToPadding off).
+     allowUndo="false": undo and redo are the core's, never the platform's (E12).
+     textCursorDrawable="@null": before API 29 the caret cannot be given a drawable from code, and
+     with none it is drawn in the text colour (E6, round 1 MINOR); from 29 setLook sets one. -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:fillViewport="true"
+    android:clipToPadding="false">
     <com.fiftyhoursaweek.slowpage.editor.EditorText
         android:id="@+id/editor"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:allowUndo="false" />
+        android:allowUndo="false"
+        android:textCursorDrawable="@null" />
 </ScrollView>

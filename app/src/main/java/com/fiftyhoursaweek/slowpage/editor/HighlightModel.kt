@@ -4,7 +4,6 @@ import android.util.Log
 import uniffi.hushhour.ByteRange
 import uniffi.hushhour.FocusMode
 import uniffi.hushhour.FontChoice
-import uniffi.hushhour.HighlightException
 import uniffi.hushhour.HighlightSettings
 import uniffi.hushhour.Highlighter
 import uniffi.hushhour.ScanResult
@@ -54,9 +53,11 @@ class HighlightModel(font: FontChoice) : AutoCloseable {
         return line until maxOf(index, line + count).coerceAtMost(lines.lineCount)
     }
 
+    // Exception, not only HighlightException: a failure on the way into the core (UniFFI
+    // refusing what it cannot encode, round 1 BLOCKING 1) leaves the line plain too.
     private fun scan(index: Int, text: CharSequence): ScanResult? = try {
         highlighter.scan(index.toULong(), lineText(text, index))
-    } catch (e: HighlightException) {
+    } catch (e: Exception) {
         Log.e(TAG, "highlighting line $index failed", e)
         null
     }
@@ -64,7 +65,7 @@ class HighlightModel(font: FontChoice) : AutoCloseable {
     /** Spans of line [index] under the current settings; null when the core failed (the line stays plain). */
     fun spans(index: Int, text: CharSequence): List<Span>? = try {
         highlighter.spans(index.toULong(), lineText(text, index))
-    } catch (e: HighlightException) {
+    } catch (e: Exception) {
         Log.e(TAG, "rendering line $index failed", e)
         null
     }

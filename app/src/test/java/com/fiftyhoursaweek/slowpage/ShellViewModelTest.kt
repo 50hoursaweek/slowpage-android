@@ -380,6 +380,20 @@ class ShellViewModelTest {
         until("the statistics show") { vm.stats.startsWith("3 words") }
     }
 
+    @Test fun aCloseDuringTheStatisticsPauseNeverReachesTheClosedDocument() {
+        // Round 1, BLOCKING 2: the statistics run 150 ms after a change; a close that comes
+        // first used to leave them to run on the closed core document, a crash.
+        val vm = create(SavedStateHandle())
+        repeat(5) {
+            openNew(vm)
+            assertTrue(vm.accept("one two three ${it}"))
+            vm.closeEditor()
+            until("closed") { vm.screen == Screen.Start }
+            settle()  // well past the pause
+        }
+        assertEquals(Screen.Start, vm.screen)
+    }
+
     // ---- helpers
 
     private fun create(handle: SavedStateHandle): ShellViewModel {
