@@ -58,14 +58,15 @@ class EditorTextTest {
         vm.newDocument()
         until("a document opens") { vm.screen is Screen.Editor && vm.highlight != null }
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
-        editor = LayoutInflater.from(activity).inflate(R.layout.editor_text, null, false) as EditorText
-        activity.setContentView(editor)
+        val page = LayoutInflater.from(activity).inflate(R.layout.editor_text, null, false)
+        editor = page.findViewById(R.id.editor)
+        activity.setContentView(page)
         editor.bind(vm.host, vm.highlight!!, vm.faces)
         editor.setLook(Look(Theme.LIGHT, FontChoice.MONO, 36f, 1.5f), 100, 40)
         editor.load(vm.editorText(), 0, 0)
         vm.attach(editor)
-        editor.measure(View.MeasureSpec.makeMeasureSpec(1280, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY))
-        editor.layout(0, 0, 1280, 800)
+        page.measure(View.MeasureSpec.makeMeasureSpec(1280, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY))
+        page.layout(0, 0, 1280, 800)
         editor.requestFocus()
         ic = editor.onCreateInputConnection(EditorInfo())!!
     }

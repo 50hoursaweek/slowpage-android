@@ -1,5 +1,6 @@
 package com.fiftyhoursaweek.slowpage
 
+import android.annotation.SuppressLint
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.KeyboardShortcutGroup
@@ -114,7 +115,10 @@ class MainActivity : ComponentActivity() {
      * The shortcuts with Ctrl (K1), before any view sees the key: the editor's own Ctrl+Z
      * would reach the platform history, which is off (E12). Copy, cut, paste and select all
      * are not in the table and stay with the text views.
+     * This overrides the framework's public Activity.dispatchKeyEvent; lint flags it only
+     * because androidx's ComponentActivity marks its own override as restricted.
      */
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val command = Shortcuts.command(event) ?: return super.dispatchKeyEvent(event)
         if (event.action != KeyEvent.ACTION_DOWN) return true

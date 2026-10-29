@@ -15,10 +15,12 @@ import android.text.style.CharacterStyle
 import android.text.style.MetricAffectingSpan
 import android.text.style.UpdateAppearance
 import android.util.AttributeSet
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
+import android.widget.ScrollView
 import com.fiftyhoursaweek.slowpage.ui.Colours
 import com.fiftyhoursaweek.slowpage.ui.Faces
 import uniffi.hushhour.FontChoice
@@ -49,6 +51,8 @@ interface EditorHost {
     fun selectionChanged(start: Int, end: Int, text: CharSequence): List<IntRange>
     fun undo()
     fun redo()
+    /** The core's text, to start again from when the editor finds itself out of step. */
+    fun coreText(): String
 }
 
 /** What the editor does for its owner: apply the core's changes, redraw the spotlight. */
@@ -112,6 +116,35 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
         addTextChangedListener(Watcher())
     }
 
+    /** The page that scrolls the editor (the layout's ScrollView); without one the editor scrolls itself. */
+    private val page: ScrollView? get() = parent as? ScrollView
+    private fun viewportHeight() = page?.height ?: height
+    private fun viewportTop() = page?.scrollY ?: scrollY
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        page?.setOnScrollChangeListener { _, _, _, _, _ -> drawVisible() }
+        page?.addOnLayoutChangeListener(pageLayout)
+    }
+
+    override fun onDetachedFromWindow() {
+        page?.removeOnLayoutChangeListener(pageLayout)
+        super.onDetachedFromWindow()
+    }
+
+    private val pageLayout = OnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+        if (bottom - top != oldBottom - oldTop) post { updatePadding(); drawVisible(); anchor() }
+    }
+
+    /** Where the caret line is, as a fraction of the visible height (the preview keeps level with it, V5). */
+    fun caretFraction(): Float? {
+        val l = layout ?: return null
+        val h = viewportHeight()
+        if (h == 0 || selectionEnd < 0) return null
+        val top = l.getLineTop(l.getLineForOffset(selectionEnd)) + totalPaddingTop - viewportTop()
+        return (top.toFloat() / h).coerceIn(0f, 1f)
+    }
+
     fun bind(host: EditorHost, model: HighlightModel, faces: Faces) {
         this.host = host
         this.model = model
@@ -143,6 +176,17 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
         val e = editableText ?: return
         val start = change.utf16.start.toInt()
         val end = change.utf16.end.toInt()
+        if (start < 0 || end < start || end > e.length) {
+            // Never expected: the view and the core disagree. Show the core's text rather than crash.
+            Log.e(TAG, "a change from the core does not fit the editor ($start..$end of ${e.length}); reloading")
+            host?.let { h ->
+                val m = model
+                val text = h.coreText()
+                m?.reset(text)
+                load(text, change.caretUtf16.toInt(), change.caretUtf16.toInt())
+            }
+            return
+        }
         applying = true
         try {
             e.replace(start, end, change.text)
@@ -286,7 +330,7 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
     }
 
     private fun updatePadding() {
-        val anchorSpace = if (typewriter) height / 2 else 0
+        val anchorSpace = if (typewriter) viewportHeight() / 2 else 0
         if (paddingLeft != sideInset || paddingTop != topInset + anchorSpace || paddingBottom != topInset + anchorSpace) {
             setPadding(sideInset, topInset + anchorSpace, sideInset, topInset + anchorSpace)
         }
@@ -316,9 +360,9 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
         val layout = layout ?: return null
         val e = editableText ?: return null
         if (e.length != m.lines.length) return null  // mid-change; drawn when it settles
-        val top = scrollY - totalPaddingTop
+        val top = viewportTop() - totalPaddingTop
         val first = layout.getLineStart(layout.getLineForVertical(maxOf(0, top)))
-        val last = layout.getLineEnd(layout.getLineForVertical(maxOf(0, top + height)))
+        val last = layout.getLineEnd(layout.getLineForVertical(maxOf(0, top + viewportHeight())))
         val a = (m.lines.line(first) - MARGIN_LINES).coerceAtLeast(0)
         val b = (m.lines.line(minOf(last, e.length)) + MARGIN_LINES).coerceAtMost(m.lines.lineCount - 1)
         return a..b
@@ -393,16 +437,22 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
 
     fun anchor(offset: Int = selectionEnd): Boolean {
         val layout = layout ?: return false
-        if (!typewriter || height == 0 || offset < 0) return false
+        val viewport = viewportHeight()
+        if (!typewriter || viewport == 0 || offset < 0) return false
         val line = layout.getLineForOffset(offset.coerceAtMost(layout.text.length))
         val target = Anchor.scrollFor(
             lineTop = layout.getLineTop(line),
             lineBottom = layout.getLineBottom(line),
             paddingTop = totalPaddingTop,
-            viewHeight = height,
+            viewHeight = viewport,
             contentHeight = layout.height + totalPaddingTop + totalPaddingBottom,
         )
-        if (abs(target - scrollY) > 0) scrollTo(0, target)
+        val p = page
+        if (p != null) {
+            if (abs(target - p.scrollY) > 0) p.scrollTo(0, target)
+        } else if (abs(target - scrollY) > 0) {
+            scrollTo(0, target)
+        }
         return true
     }
 
@@ -424,6 +474,7 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
     }
 
     private companion object {
+        const val TAG = "SlowpageEditor"
         const val MARGIN_LINES = 20
         const val KEEP_LINES = 300
     }

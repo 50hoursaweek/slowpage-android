@@ -386,6 +386,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
 
         override fun undo() = command(Command.UNDO)
         override fun redo() = command(Command.REDO)
+        override fun coreText() = editorText()
     }
 
     /** The open document's text, for an editor being made (open, rotation, a change of view). */

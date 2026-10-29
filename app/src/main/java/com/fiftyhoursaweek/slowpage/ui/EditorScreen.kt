@@ -2,6 +2,7 @@ package com.fiftyhoursaweek.slowpage.ui
 
 import android.content.Context
 import android.view.LayoutInflater
+import android.view.View
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -33,6 +34,9 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -100,20 +104,44 @@ fun EditorScreen(
             TopLine(vm, name, status, onExport, onImport)
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 val divider = blend(p.text.compose(), p.background.compose(), 0.12f)
-                when (mode) {
-                    ViewMode.EDITOR -> EditorPane(vm, panes, look, side, top, Modifier.fillMaxSize())
-                    ViewMode.PREVIEW -> PreviewPane(vm, panes, side, top, Modifier.fillMaxSize())
-                    ViewMode.SPLIT -> if (stacked) {
-                        Column(Modifier.fillMaxSize()) {
-                            EditorPane(vm, panes, look, side, top, Modifier.weight(1f).fillMaxWidth())
-                            Box(Modifier.fillMaxWidth().height(1.dp).background(divider))
-                            PreviewPane(vm, panes, side, top, Modifier.weight(1f).fillMaxWidth())
+                val gap = (TOP_INSET_DP * density).roundToInt()
+                // The editor stays in one place in the tree whatever the view, so changing the view
+                // never builds it again (on a 1 MB document that took seconds): only its frame changes,
+                // and in Preview it is hidden under the preview.
+                Layout(
+                    content = {
+                        EditorPane(vm, panes, look, side, top, Modifier)
+                        if (mode != ViewMode.EDITOR) {
+                            Box(Modifier.background(divider))
+                            PreviewPane(vm, panes, side, top, Modifier)
                         }
-                    } else {
-                        Row(Modifier.fillMaxSize()) {
-                            EditorPane(vm, panes, look, side, top, Modifier.weight(1f).fillMaxHeight())
-                            Box(Modifier.width(1.dp).fillMaxHeight().padding(vertical = TOP_INSET_DP.dp).background(divider))
-                            PreviewPane(vm, panes, side, top, Modifier.weight(1f).fillMaxHeight())
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                ) { parts, c ->
+                    val w = c.maxWidth
+                    val h = c.maxHeight
+                    fun exactly(width: Int, height: Int) = Constraints.fixed(maxOf(0, width), maxOf(0, height))
+                    layout(w, h) {
+                        // Before the highlighting is ready there is no editor yet: nothing to place.
+                        if (parts.size != (if (mode == ViewMode.EDITOR) 1 else 3)) return@layout
+                        when {
+                            mode == ViewMode.EDITOR -> parts[0].measure(exactly(w, h)).place(0, 0)
+                            mode == ViewMode.PREVIEW -> {
+                                parts[0].measure(exactly(w, h)).place(0, 0)
+                                parts[2].measure(exactly(w, h)).place(0, 0)
+                            }
+                            stacked -> {
+                                val half = h / 2
+                                parts[0].measure(exactly(w, half)).place(0, 0)
+                                parts[1].measure(exactly(w, 1)).place(0, half)
+                                parts[2].measure(exactly(w, h - half - 1)).place(0, half + 1)
+                            }
+                            else -> {
+                                val half = w / 2
+                                parts[0].measure(exactly(half, h)).place(0, 0)
+                                parts[1].measure(exactly(1, h - 2 * gap)).place(half, gap)
+                                parts[2].measure(exactly(w - half - 1, h)).place(half + 1, 0)
+                            }
                         }
                     }
                 }
@@ -143,13 +171,7 @@ private class Panes {
         val index = rendered.blockIndex(lines.line(vm.selectionEnd.coerceIn(0, lines.length))) ?: return
         var fraction = 1f / 3f
         val editor = editor
-        if (mode == ViewMode.SPLIT && editor != null && editor.height > 0) {
-            val l = editor.layout
-            if (l != null) {
-                val caretTop = l.getLineTop(l.getLineForOffset(editor.selectionEnd.coerceAtLeast(0))) + editor.totalPaddingTop - editor.scrollY
-                fraction = (caretTop.toFloat() / editor.height).coerceIn(0f, 1f)
-            }
-        }
+        if (mode == ViewMode.SPLIT && editor != null) editor.caretFraction()?.let { fraction = it }
         list.keepLevel(index, fraction)
     }
 }
@@ -157,12 +179,15 @@ private class Panes {
 @Composable
 private fun EditorPane(vm: ShellViewModel, panes: Panes, look: Look, side: Int, top: Int, modifier: Modifier) {
     val typewriter = vm.preferences.typewriter
+    val mode = vm.viewMode
     val model = vm.highlight ?: return
     // A new document gets a new editor.
     key(model) { AndroidView(
-        modifier = modifier.testTag(EDITOR_TAG),
+        // The editor's page is clipped to its pane: Compose does not clip a platform view.
+        modifier = modifier.clipToBounds().testTag(EDITOR_TAG),
         factory = { context ->
-            val editor = LayoutInflater.from(context).inflate(R.layout.editor_text, null, false) as EditorText
+            val page = LayoutInflater.from(context).inflate(R.layout.editor_text, null, false)
+            val editor = page.findViewById<EditorText>(R.id.editor)
             editor.bind(vm.host, model, vm.faces)
             editor.setLook(look, side, top)
             editor.load(vm.editorText(), vm.selectionStart, vm.selectionEnd)
@@ -170,13 +195,21 @@ private fun EditorPane(vm: ShellViewModel, panes: Panes, look: Look, side: Int, 
             panes.editor = editor
             // F1: on New and on Open the caret is in the text with the keyboard up.
             if (vm.viewMode != ViewMode.PREVIEW) editor.post { focusEditor(editor) }
-            editor
+            page
         },
-        update = { editor ->
+        update = { page ->
+            val editor = page.findViewById<EditorText>(R.id.editor)
             editor.setLook(look, side, top)
             editor.typewriter = typewriter
+            // Hidden under the full Preview; back from it, the caret is in the text again.
+            val hidden = mode == ViewMode.PREVIEW
+            if (hidden != (page.visibility != View.VISIBLE)) {
+                page.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
+                if (!hidden) editor.post { focusEditor(editor) }
+            }
         },
-        onRelease = { editor ->
+        onRelease = { page ->
+            val editor = page.findViewById<EditorText>(R.id.editor)
             vm.detach(editor)
             editor.unbind()
             if (panes.editor === editor) panes.editor = null
@@ -195,12 +228,17 @@ private fun PreviewPane(vm: ShellViewModel, panes: Panes, side: Int, top: Int, m
     val rendered = vm.preview
     val mode = vm.viewMode
     AndroidView(
-        modifier = modifier.testTag(PREVIEW_TAG),
+        modifier = modifier.clipToBounds().testTag(PREVIEW_TAG),
         factory = { context -> PreviewList(context) { vm.previewNeedsHint() }.also { panes.preview = it } },
         update = { list ->
             list.show(rendered, side, top)
-            // In full Preview the keys go to the preview, so typing there gets the hint.
-            if (mode == ViewMode.PREVIEW && !list.hasFocus()) list.post { list.requestFocus() }
+            // In full Preview the keys go to the preview, so typing there gets the hint; there is
+            // nothing to type into, so the soft keyboard goes.
+            if (mode == ViewMode.PREVIEW && !list.hasFocus()) list.post {
+                list.requestFocus()
+                val imm = list.context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.hideSoftInputFromWindow(list.windowToken, 0)
+            }
         },
         onRelease = { if (panes.preview === it) panes.preview = null },
     )
@@ -268,7 +306,8 @@ private fun StatusLine(vm: ShellViewModel, muted: Color) {
     val pal = palette(p.theme)
     val text = pal.text.compose()
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+        // On the plain page colour, as on the iPad: nothing of the page shows behind the bar.
+        Modifier.fillMaxWidth().background(pal.background.compose()).padding(horizontal = 12.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
