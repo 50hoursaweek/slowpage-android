@@ -38,6 +38,13 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import uniffi.hushhour.Backdrop
+import uniffi.hushhour.FocusMode
+import uniffi.hushhour.FontChoice
+import uniffi.hushhour.ViewMode
+import uniffi.hushhour.focusLabel
+import uniffi.hushhour.fontLabel
+import uniffi.hushhour.themeLabel
+import uniffi.hushhour.viewLabel
 import uniffi.hushhour.MusicChoice
 import uniffi.hushhour.SoundSet
 import uniffi.hushhour.Theme
@@ -101,7 +108,7 @@ class DialogsTest {
         click("Theme-Dark")
         assertEquals(Theme.DARK, vm.preferences.theme)
         click("Font-Serif")
-        assertEquals(uniffi.hushhour.FontChoice.SERIF, vm.preferences.font)
+        assertEquals(FontChoice.SERIF, vm.preferences.font)
         click("Background-Drift")
         assertEquals(Backdrop.DRIFT, vm.preferences.backdrop)
         compose.onNodeWithText("Rests while you type; still with Remove animations.").assertExists()
@@ -178,6 +185,19 @@ class DialogsTest {
         compose.waitForIdle()
         for (item in listOf("Appearance…", "Sound and music…", "Welcome…", "About Slowpage…")) compose.onNodeWithText(item).assertExists()
         for (gone in listOf("Import music…", "Music: Rain", "Typing sound")) compose.onAllNodes(hasText(gone, substring = true)).assertCountEquals(0)
+        // The iPad's order (EditorViewController.menuItems): Undo, Appearance, Theme, Font, View, Spotlight, Anchor, text size, Welcome.
+        // Unchecked items, by their whole text: the status line has "View: …", "Spotlight: …" and "Anchor: …" too.
+        val p = vm.preferences
+        val order = listOf(
+            "Undo", "Appearance…",
+            "Theme: " + themeLabel(Theme.entries.first { it != p.theme }),
+            "Font: " + fontLabel(FontChoice.entries.first { it != p.font }),
+            "View: " + viewLabel(ViewMode.entries.first { it != vm.viewMode }),
+            "Spotlight: " + focusLabel(FocusMode.entries.first { it != p.focus }),
+            "Anchor", "Larger text", "Welcome…",
+        )
+        val tops = order.map { compose.onNodeWithText(it).fetchSemanticsNode().positionInRoot.y }
+        assertEquals(order.joinToString(), tops, tops.sorted())
         compose.onNodeWithText("Sound and music…").performClick()
         compose.waitForIdle()
         assertEquals(Dialog.SOUND, vm.dialog)

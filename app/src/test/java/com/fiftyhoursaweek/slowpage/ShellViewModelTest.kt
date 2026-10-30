@@ -35,11 +35,14 @@ import uniffi.hushhour.Theme
 import uniffi.hushhour.ViewMode
 import uniffi.hushhour.defaultPreferences
 import uniffi.hushhour.limits
+import uniffi.hushhour.musicLabel
 import uniffi.hushhour.nextFocus
 import uniffi.hushhour.nextTheme
 import uniffi.hushhour.serializePreferences
 import java.io.File
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.time.Duration
 
 /**
@@ -526,6 +529,49 @@ class ShellViewModelTest {
         settle()
         assertEquals(MusicChoice.Off, next.preferences.music)
         assertNotNull(app.audio.onProblem)
+    }
+
+    @Test fun aQuickRelaunchWhileTheAudioThreadIsBusyNeverResumesTheOldTrack() {
+        // Codex phase 6 audit, BLOCKING 2: the stop and the silence are still queued behind a
+        // busy audio thread when the new window comes to the front. Nothing is drained between.
+        mixer.active = true
+        val vm = create(SavedStateHandle())
+        openNew(vm)
+        vm.setMusic(MusicChoice.Rain)
+        audioLane.submit {}.get()
+        assertTrue(output.audible)
+        val busy = CountDownLatch(1)
+        audioLane.execute { busy.await(10, TimeUnit.SECONDS) }
+        app.audio.background()  // onStop
+        stores.removeAt(0).clear()  // onCleared
+        app.audio.foreground()  // the new window's onStart, at once
+        assertFalse("the old stream, still running with Rain, is not heard", output.audible)
+        busy.countDown()
+        audioLane.submit {}.get()
+        assertEquals(listOf("start", "allow false", "stop", "allow true"), output.log().filter { it != "opening" })
+        assertEquals("the silence reached the core before the output was allowed", listOf("music ${MusicChoice.Rain}", "music ${MusicChoice.Off}"), mixer.music())
+        assertFalse("and nothing starts on the start screen", output.running)
+        // Home and back quickly, while busy: still silent, then allowed once in front.
+        val busyAgain = CountDownLatch(1)
+        audioLane.execute { busyAgain.await(10, TimeUnit.SECONDS) }
+        app.audio.background()
+        app.audio.foreground()
+        app.audio.background()
+        busyAgain.countDown()
+        audioLane.submit {}.get()
+        assertFalse("left again before the thread got to it: stays not allowed", output.allowed)
+    }
+
+    @Test fun aTrackThatCannotBeDecodedIsUntickedAndTheStatusLineSaysSo() {
+        // Codex phase 5, MINOR 3: a damaged file with a valid header imports, then fails in the core.
+        val vm = create(SavedStateHandle())
+        openNew(vm)
+        val mine = MusicChoice.File("mine.mp3")
+        mixer.active = false  // the core dropped it at once
+        vm.setMusic(mine)
+        until("the failure reaches the view model") { vm.preferences.music == MusicChoice.Off }
+        assertEquals("“${musicLabel(mine)}” could not be played, so Music is Off.", vm.notice)
+        assertEquals(MusicChoice.Off, app.audio.playingMusic)
     }
 
     @Test fun typingMakesOneKeySoundPerChangeByKind() {

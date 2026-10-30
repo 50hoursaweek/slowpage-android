@@ -1,6 +1,7 @@
 # Status
 
 ## Done
+- Phases 5+6 merged (661c65b, APK ab61c0c0): Codex phase 5 round 1 fixes, the iPad's dialogs, welcome tour and background pattern; Francesco's run 7/7 PASS.
 - Phase 5 (audio), Francesco's run on APK 0b78f921: 7/7 PASS (`audit/phase-5/device-try-francesco.md`).
 - Phase 4 audit: CLOSED-AGREED 2026-10-30 (`audit/phase-4/round-3-codex-verification.md`, line in `audit/LATEST.md`). Code 36159ac, APK be304349….
 - Phase 4 editor (E1–E15, V1–V6, K1): `audit/phase-4/editor-choice.md`, emulator notes in `audit/phase-4/emulator/README.md`. Francesco's run: tests 1–8 PASS on the Huawei (`audit/phase-4/device-try-francesco.md`).
@@ -14,7 +15,7 @@
 - Emulator installed on `/Volumes/Expansion/hushhour-android-emulator` (sdk: emulator, platform-tools, AOSP arm64 API 31 image; AVD `slowpage-tablet` in `avd/`, 2000x1200, 240 dpi, landscape, no hardware keyboard; `user-home/` for ANDROID_USER_HOME).
 
 ## In progress
-- Phases 5 and 6 merged (handoff `audit/handoffs/2026-10-30-phase-5-6-merged.md`): Codex phase 5 round 1 answered (`audit/phase-5/round-1-claude.md`: B1, B2, M3–M5 fixed; F1 explained); the iPad's dialogs, welcome tour and background pattern ported (`audit/phase-6/notes.md`). 159 JVM tests and 2 emulator tests pass, lint 0 errors. One APK to PMO for Francesco's run, then one Codex audit.
+- Phases 5+6 round 2 (handoff `audit/handoffs/2026-10-30-phase-5-6-round-2.md`): Codex's round 1 (`audit/phase-6/round-1-codex.md`) answered in `audit/phase-6/round-2-claude.md`. Fixed: B2 relaunch race (allow on the audio thread), the iPad's menu order, damaged tracks unticked with a notice. 162 JVM tests pass, lint 0 errors. Francesco's run of APK ab61c0c0 (661c65b): 7/7 PASS, no findings (`audit/phase-6/device-try-francesco.md`).
 
 ## Emulator
 - `/Volumes/Expansion/hushhour-android-emulator`. Start (stdin detached, ANDROID_HOME must point there too, the profile sets it to the old SDK):
@@ -26,4 +27,4 @@
 - Nothing.
 
 ## Next
-- Francesco's run of the merged APK (tour, dialogs, background, the audio fixes), then one Codex audit.
+- Codex verification of round 2.

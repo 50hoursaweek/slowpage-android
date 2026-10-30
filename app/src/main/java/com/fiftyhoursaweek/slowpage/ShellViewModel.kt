@@ -48,6 +48,7 @@ import uniffi.hushhour.TextChange
 import uniffi.hushhour.ViewMode
 import uniffi.hushhour.defaultPreferences
 import uniffi.hushhour.limits
+import uniffi.hushhour.musicLabel
 import uniffi.hushhour.nextFocus
 import uniffi.hushhour.nextFont
 import uniffi.hushhour.nextTheme
@@ -215,6 +216,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             // The music is never saved (A4): it starts Off whatever the file says.
             audio.onProblem = reportAudio
             audio.onSampleChange = sampleChanged
+            audio.onMusicFailed = musicFailed
             audio.preferencesChanged(preferences)
             refreshMusicChoices()
             refresh()
@@ -884,6 +886,11 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     /** Sound problems and samples for this view model; dropped from the process's controller in [onCleared]. */
     private val reportAudio: (String) -> Unit = { notice = it }
     private val sampleChanged: (MusicChoice?) -> Unit = { sample = it }
+    /** A track the core could not decode is unticked, and the status line says so (MINOR 3). */
+    private val musicFailed: (MusicChoice) -> Unit = { choice ->
+        if (preferences.music == choice) setMusic(MusicChoice.Off)
+        notice = "“${musicLabel(choice)}” could not be played, so Music is Off."
+    }
 
     override fun onCleared() {
         // The task is gone but the process may stay (Codex phase 5, BLOCKING 2 and MINOR 5): no
@@ -891,6 +898,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         // controller keeps nothing of this view model.
         audio.silenceUntilDocument()
         if (audio.onProblem === reportAudio) audio.onProblem = null
+        if (audio.onMusicFailed === musicFailed) audio.onMusicFailed = null
         if (audio.onSampleChange === sampleChanged) {
             audio.stopSample()
             audio.onSampleChange = null

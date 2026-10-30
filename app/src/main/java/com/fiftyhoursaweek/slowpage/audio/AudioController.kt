@@ -34,9 +34,10 @@ interface AudioOutput {
     fun start(): Boolean
     fun stop()
     /**
-     * Whether the stream may be heard (the app is in front); from the main thread, at once and
-     * without blocking. While not, a stream renders silence and is never reopened, so a start
-     * still under way when the app leaves the screen is not heard (Codex phase 5, BLOCKING 1).
+     * Whether the stream may be heard (the app is in front); never blocks. False comes from the
+     * main thread at once; true from the audio thread, in order with the stops queued there.
+     * While not, a stream renders silence and is never reopened, so a start still under way
+     * when the app leaves the screen is not heard (Codex phase 5, BLOCKING 1).
      */
     fun allow(allowed: Boolean)
 }
@@ -76,6 +77,12 @@ class AudioController internal constructor(
         private set
     /** Told when a sample starts, changes or ends (the tour's buttons, phase 6). */
     var onSampleChange: ((MusicChoice?) -> Unit)? = null
+    /**
+     * Told when a track stops because the core could not decode it (a damaged file with a valid
+     * header, Codex phase 5 MINOR 3): the core drops a failed file's music, and a loop that
+     * plays never goes quiet, so a track still chosen that has gone quiet has failed.
+     */
+    var onMusicFailed: ((MusicChoice) -> Unit)? = null
     /** Told once when sound cannot start (no output, or the core's engine failed). */
     var onProblem: ((String) -> Unit)? = null
     private val endSample = Runnable { stopSample() }
@@ -83,6 +90,8 @@ class AudioController internal constructor(
     // ---- Shared with the audio thread
     @Volatile private var foreground = true
     @Volatile private var musicVolume = 0.5f
+    /** Orders [foreground] and [background] with the audio thread's allow; held only for a flag. */
+    private val allowing = Any()
 
     // ---- Audio thread only
     private var mixer: Mixer? = null
@@ -91,6 +100,8 @@ class AudioController internal constructor(
     private var outputFailed = false
     private var idle: ScheduledFuture<*>? = null
     private var quiet = 0
+    /** What the core was last told to play, on this thread. */
+    private var told: MusicChoice = MusicChoice.Off
 
     /** The preferences now (on start and after every change): music, volumes, the sound set previewed. */
     fun preferencesChanged(p: Preferences) {
@@ -151,12 +162,21 @@ class AudioController internal constructor(
         onSampleChange?.invoke(null)
     }
 
-    /** The app is in front again (onStart): music that was playing goes on where it was. */
+    /**
+     * The app is in front again (onStart): music that was playing goes on where it was. The
+     * output is heard again only on the audio thread, after what is queued before it: the stop
+     * from [background] and a [silenceUntilDocument] from a removed task. Allowing it here, with
+     * those still waiting on a busy thread, let the old stream resume the stale track on the
+     * start screen (Codex phase 6 audit, BLOCKING 2).
+     */
     fun foreground() {
-        foreground = true
-        output.allow(true)
+        synchronized(allowing) { foreground = true }
         val music = playingMusic
-        lane.execute { if (music != MusicChoice.Off) ensureRunning() }
+        lane.execute {
+            // Not if the app left the screen again meanwhile: [background] holds the same lock.
+            synchronized(allowing) { if (foreground) output.allow(true) }
+            if (music != MusicChoice.Off) ensureRunning()
+        }
     }
 
     /**
@@ -164,8 +184,10 @@ class AudioController internal constructor(
      * stream stops (A8). Returns at once, even while the audio thread is opening a stream.
      */
     fun background() {
-        foreground = false
-        output.allow(false)
+        synchronized(allowing) {
+            foreground = false
+            output.allow(false)
+        }
         lane.execute { stopStream() }
     }
 
@@ -186,6 +208,7 @@ class AudioController internal constructor(
         playingMusic = target
         onLane {
             it.setMusic(target)
+            told = target
             if (target != MusicChoice.Off) ensureRunning()
         }
     }
@@ -257,9 +280,23 @@ class AudioController internal constructor(
     private fun tick() {
         quiet = if (mixer?.isActive() == true) 0 else quiet + 1
         if (quiet >= IDLE_TICKS) {
+            val lost = told
+            if (lost is MusicChoice.File || lost is MusicChoice.Bundled) {
+                Log.w(TAG, "the track could not be played: $lost")
+                told = MusicChoice.Off
+                main.post { musicFailed(lost) }
+            }
             Log.i(TAG, "audio idle, stream stopped")
             stopStream()
         }
+    }
+
+    // ---- Main thread
+
+    private fun musicFailed(choice: MusicChoice) {
+        if (playingMusic != choice) return  // chosen again or changed meanwhile
+        if (route.sample == choice) stopSample()
+        onMusicFailed?.invoke(choice)
     }
 
     private fun stopStream() {

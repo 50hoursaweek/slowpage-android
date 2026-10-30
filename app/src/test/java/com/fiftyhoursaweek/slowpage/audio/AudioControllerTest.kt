@@ -218,6 +218,33 @@ class AudioControllerTest {
         assertTrue(output.audible)
     }
 
+    @Test fun aTrackTheCoreCouldNotDecodeIsReportedOnceAndAPlayingLoopIsNot() {
+        // Codex phase 5, MINOR 3: the core drops a file that fails; a loop that plays never goes quiet.
+        val mine = MusicChoice.File("mine.mp3")
+        val failed = mutableListOf<MusicChoice>()
+        audio.onMusicFailed = { failed += it }
+        mixer.active = true
+        audio.preferencesChanged(defaultPreferences().copy(music = rain))
+        audio.releaseMusic()
+        Thread.sleep(200)  // ten ticks
+        drain()
+        assertEquals("a soundscape that plays", emptyList<MusicChoice>(), failed)
+        audio.preferencesChanged(defaultPreferences().copy(music = mine))
+        mixer.active = false  // the decoder gave up
+        until("the failure is told") { shadowOf(Looper.getMainLooper()).idle(); failed.isNotEmpty() }
+        assertEquals(listOf(mine), failed)
+        assertEquals("and the stream stops", "stop", output.all().last())
+        Thread.sleep(200)
+        drain()
+        assertEquals("once", listOf(mine), failed)
+        // Off, quiet after it: not a failure.
+        audio.preferencesChanged(defaultPreferences())
+        audio.playKey(KeyKind.CHARACTER)
+        Thread.sleep(200)
+        drain()
+        assertEquals(listOf(mine), failed)
+    }
+
     @Test fun noAudioOutputIsReportedOnce() {
         output.works = false
         val problems = mutableListOf<String>()

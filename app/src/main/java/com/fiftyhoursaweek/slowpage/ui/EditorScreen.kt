@@ -315,19 +315,20 @@ private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () ->
         item("Appearance…") { vm.showDialog(Dialog.APPEARANCE) }
         item("Sound and music…") { vm.showDialog(Dialog.SOUND) }
         HorizontalDivider()
-        for (mode in ViewMode.entries) item("View: ${viewLabel(mode)}", enabled = vm.readOnly == null, checked = mode == vm.viewMode) { vm.setView(mode) }
-        HorizontalDivider()
-        for (focus in FocusMode.entries) item("Spotlight: ${focusLabel(focus)}", checked = focus == p.focus) {
-            vm.updatePreferences(vm.preferences.copy(focus = focus))
-        }
-        item("Anchor", checked = p.typewriter) { vm.command(Command.ANCHOR) }
-        HorizontalDivider()
+        // Theme, Font, View, Spotlight, Anchor: the iPad's order (Codex phase 6 audit, MINOR).
         for (theme in Theme.entries) item("Theme: ${themeLabel(theme)}", checked = theme == p.theme) {
             vm.updatePreferences(vm.preferences.copy(theme = theme))
         }
         for (font in FontChoice.entries) item("Font: ${fontLabel(font)}", checked = font == p.font) {
             vm.updatePreferences(vm.preferences.copy(font = font))
         }
+        HorizontalDivider()
+        for (mode in ViewMode.entries) item("View: ${viewLabel(mode)}", enabled = vm.readOnly == null, checked = mode == vm.viewMode) { vm.setView(mode) }
+        HorizontalDivider()
+        for (focus in FocusMode.entries) item("Spotlight: ${focusLabel(focus)}", checked = focus == p.focus) {
+            vm.updatePreferences(vm.preferences.copy(focus = focus))
+        }
+        item("Anchor", checked = p.typewriter) { vm.command(Command.ANCHOR) }
         HorizontalDivider()
         item("Larger text") { vm.command(Command.ZOOM_IN) }
         item("Smaller text") { vm.command(Command.ZOOM_OUT) }
