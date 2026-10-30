@@ -37,7 +37,6 @@ fun StartScreen(
     documents: List<DocumentEntry>,
     recent: List<String>,
     problems: List<String>,
-    music: String,
     onNew: () -> Unit,
     onImport: () -> Unit,
     onSettings: () -> Unit,
@@ -50,9 +49,6 @@ fun StartScreen(
         LazyColumn(Modifier.widthIn(max = 760.dp).fillMaxWidth().padding(horizontal = 24.dp)) {
             item {
                 Text("Slowpage", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 32.dp))
-                if (music.isNotEmpty()) {
-                    Text(music, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
                 Row(Modifier.padding(vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = onNew) { Text("New") }
                     OutlinedButton(onClick = onImport) { Text("Import…") }

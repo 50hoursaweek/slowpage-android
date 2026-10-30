@@ -34,7 +34,7 @@ import com.fiftyhoursaweek.slowpage.ui.StartScreen
 /** The one window (L3: `singleTask`, one document at a time). */
 class MainActivity : ComponentActivity() {
     private val vm: ShellViewModel by viewModels()
-    private lateinit var music: Music
+    private val audio get() = (application as SlowpageApp).audio
 
     /** The document an Export… is for, while the system's Create document screen is up. */
     private var exporting: String? = null
@@ -50,13 +50,16 @@ class MainActivity : ComponentActivity() {
     private val textExporter = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         finishExport(uri)
     }
+    /** A music file to copy in (A3): any audio type; the view model checks the extension the core plays. */
+    private val musicImporter = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { vm.importMusic(contentResolver, it) }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // No edge-to-edge (F4): the window is resized for the keyboard (adjustResize) instead of
         // relying on IME insets, which the Huawei keyboard may not report.
         super.onCreate(savedInstanceState)
         exporting = savedInstanceState?.getString(EXPORTING_KEY)
-        music = Music(this)
         setContent {
             SlowpageTheme(vm.preferences.theme) {
                 val snackbar = remember { SnackbarHostState() }
@@ -66,8 +69,6 @@ class MainActivity : ComponentActivity() {
                         vm.notice = null
                     }
                 }
-                // The stored volume arrives after onStart on a cold start (Codex MINOR 3).
-                LaunchedEffect(vm.preferences.musicVolume) { music.setVolume(vm.preferences.musicVolume) }
                 BackHandler(enabled = vm.screen != Screen.Start) { vm.back() }
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding().imePadding()) {
                     when (val screen = vm.screen) {
@@ -75,7 +76,6 @@ class MainActivity : ComponentActivity() {
                             documents = vm.documents,
                             recent = vm.recent,
                             problems = vm.problems,
-                            music = vm.music,
                             onNew = vm::newDocument,
                             onImport = ::startImport,
                             onSettings = vm::openSettings,
@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
                             status = (listOf(vm.status) + vm.problems).filter { it.isNotEmpty() }.joinToString(" · "),
                             onExport = { startExport(screen.name) },
                             onImport = ::startImport,
+                            onImportMusic = { musicImporter.launch(arrayOf("audio/*", "application/ogg")) },
                         )
                         Screen.Settings -> SettingsScreen(
                             preferences = vm.preferences,
@@ -178,12 +179,14 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         vm.refresh()
-        music.start(vm.preferences.musicVolume) { vm.music = it }
+        audio.foreground()
     }
 
     override fun onStop() {
         vm.saveNow()
-        music.stop()
+        // A rotation stops and starts the activity: the sound goes on through it (Gate A
+        // restarted the music). Leaving the screen stops the stream (A8).
+        if (!isChangingConfigurations) audio.background()
         super.onStop()
     }
 

@@ -28,6 +28,7 @@ import com.fiftyhoursaweek.slowpage.preview.RenderedPreview
 import com.fiftyhoursaweek.slowpage.ui.Faces
 import com.fiftyhoursaweek.slowpage.store.DocumentEntry
 import com.fiftyhoursaweek.slowpage.store.Kept
+import com.fiftyhoursaweek.slowpage.store.Names
 import com.fiftyhoursaweek.slowpage.store.Recovery
 import com.fiftyhoursaweek.slowpage.store.StateFile
 import com.fiftyhoursaweek.slowpage.store.StateProblems
@@ -38,6 +39,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import uniffi.hushhour.DocumentException
+import uniffi.hushhour.KeyKind
+import uniffi.hushhour.MusicChoice
 import uniffi.hushhour.Persistence
 import uniffi.hushhour.Preferences
 import uniffi.hushhour.TextChange
@@ -85,7 +88,11 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     var notice by mutableStateOf<String?>(null)
     var preferences by mutableStateOf(defaultPreferences())
         private set
-    var music by mutableStateOf("")
+    /** Typing sounds and music (phase 5), the process's. */
+    private val audio get() = app.audio
+    /** What the music picker offers: Off, the bundled loops, the soundscapes, the user's tracks (A3). */
+    var musicChoices by mutableStateOf(listOf<MusicChoice>(MusicChoice.Off))
+        private set
 
     // The open document.
     private var session: EditorSession? = null
@@ -178,9 +185,14 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
                 StateFile.read(app.preferencesFile)?.let { parsePreferences(it.toString(Charsets.UTF_8)) }
                     ?: defaultPreferences()
             }
+            // The music is never saved (A4): it starts Off whatever the file says.
+            audio.onProblem = { notice = it }
+            audio.preferencesChanged(preferences)
+            refreshMusicChoices()
             refresh()
             saved.get<String>(OPEN_KEY)?.let { open(it, restoring = true) }
         }
+        viewModelScope.launch(io) { MusicFiles.removeLeftovers(app) }
     }
 
     fun refresh() {
@@ -208,7 +220,10 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             }
             created.fold(
                 onSuccess = { open(it) },
-                onFailure = { notice = "A new document could not be made: ${it.message}" },
+                onFailure = {
+                    notice = "A new document could not be made: ${it.message}"
+                    if (session == null) audio.silenceUntilDocument()
+                },
             )
         }
     }
@@ -268,6 +283,8 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
                     previewRevision = null
                     updateEditState()
                     screen = Screen.Editor(name)
+                    // A document is open: the checked track plays (A5).
+                    audio.releaseMusic()
                     saved[OPEN_KEY] = name
                     updateStatus()
                     if (recovered) {
@@ -280,6 +297,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
                 onFailure = { e ->
                     // A file that cannot be opened keeps the current screen (D6).
                     notice = "“$name” could not be opened: ${describe(e)}"
+                    if (session == null) audio.silenceUntilDocument()
                     saved.remove<String>(OPEN_KEY)
                     refresh()
                 },
@@ -404,6 +422,9 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
                 }
             }
             afterChange(s)
+            // One key sound per change, as on Linux and the iPad (A2): Enter, Backspace, or a
+            // character (paste too).
+            audio.playKey(if (insert == "\n") KeyKind.ENTER else if (insert.isEmpty()) KeyKind.BACKSPACE else KeyKind.CHARACTER)
             return edited
         }
 
@@ -493,7 +514,8 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             Command.VIEW -> setView(nextView(viewMode))
             Command.UNDO -> session?.let { s -> if (historyOpen()) s.undo()?.let { applyCoreChange(s, it) } }
             Command.REDO -> session?.let { s -> if (historyOpen()) s.redo()?.let { applyCoreChange(s, it) } }
-            Command.NEW -> if (session == null) newDocument() else closeEditor(then = ::newDocument)
+            // A switch: the music goes on into the new document, as on the iPad.
+            Command.NEW -> if (session == null) newDocument() else closeEditor(keepMusic = true, then = ::newDocument)
             Command.OPEN, Command.CLOSE -> closeEditor()
             Command.IMPORT -> Unit  // the activity starts the system picker
         }
@@ -582,8 +604,12 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         }
     }
 
-    /** Back to the start screen once the text is on disk, then [then]; a failed save keeps the document open (D3). */
-    fun closeEditor(then: (() -> Unit)? = null) {
+    /**
+     * Back to the start screen once the text is on disk, then [then]; a failed save keeps the
+     * document open (D3). [keepMusic]: another document opens next, and the music goes on
+     * (if it does not open, the start screen is silenced then).
+     */
+    fun closeEditor(keepMusic: Boolean = false, then: (() -> Unit)? = null) {
         val s = session ?: return
         if (closing) return
         closing = true
@@ -602,6 +628,8 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             openedText = null
             readOnly = null
             editorBusy = false
+            // No document: silence until the next one; the track stays checked (A5).
+            if (!keepMusic) audio.silenceUntilDocument()
             s.close()
             highlight?.close()
             highlight = null
@@ -705,6 +733,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         val old = preferences
         preferences = new
         if (new.focus != old.focus) sink?.refreshSpotlight()
+        audio.preferencesChanged(new)
         viewModelScope.launch {
             val failure = withContext(io) {
                 StateFile.write(app.preferencesFile, serializePreferences(new).toByteArray(Charsets.UTF_8))
@@ -713,6 +742,31 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             problems = app.problems.lines()
         }
     }
+
+    // ---- Sound (phase 5; the full Sound and music dialog is phase 6)
+
+    /** Check [choice]; it plays while a document is open (A5). */
+    fun setMusic(choice: MusicChoice) = updatePreferences(preferences.copy(music = choice))
+
+    /** Copy a picked music file into the app (A3); it is then in the picker. */
+    fun importMusic(resolver: ContentResolver, uri: Uri) {
+        viewModelScope.launch {
+            val result = withContext(io) {
+                runCatching {
+                    val display = displayName(resolver, uri)
+                    val input = resolver.openInputStream(uri) ?: throw IOException("the file cannot be read")
+                    input.use { MusicFiles.import(app, display, it) }
+                }
+            }
+            notice = result.fold(
+                onSuccess = { "Imported “${Names.split(it).first}”; it is in the music list." },
+                onFailure = { "The music could not be imported: ${describe(it)}" },
+            )
+            refreshMusicChoices()
+        }
+    }
+
+    private fun refreshMusicChoices() = audio.choices { musicChoices = it }
 
     // ---- Navigation
 
@@ -745,6 +799,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         is DocumentException.TooLarge -> "it is larger than ${e.limitBytes.toLong() / (1024 * 1024)} MiB"
         is DocumentException -> "the core refused it"
         is SecurityException -> "access was refused"
+        is MusicFiles.ImportError -> e.message.orEmpty()
         else -> e.message ?: e.toString()
     }
 

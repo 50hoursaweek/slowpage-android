@@ -13,7 +13,7 @@
 - Emulator installed on `/Volumes/Expansion/hushhour-android-emulator` (sdk: emulator, platform-tools, AOSP arm64 API 31 image; AVD `slowpage-tablet` in `avd/`, 2000x1200, 240 dpi, landscape, no hardware keyboard; `user-home/` for ANDROID_USER_HOME).
 
 ## In progress
-- Nothing. Waiting for Francesco before phase 5.
+- Phase 5 (audio): built, emulator-checked; APK sent to PMO for Francesco's try (`audit/phase-5/audio.md`).
 
 ## Emulator
 - `/Volumes/Expansion/hushhour-android-emulator`. Start (stdin detached, ANDROID_HOME must point there too, the profile sets it to the old SDK):
@@ -25,4 +25,4 @@
 - Nothing.
 
 ## Next
-- Phase 5, when Francesco says to start.
+- Francesco tries phase 5 on the tablet: key sounds, music choices, rotation while music plays, leaving and returning, Import music…. Then one Codex audit of phase 5.

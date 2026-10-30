@@ -27,8 +27,8 @@ import uniffi.hushhour.themeLabel
 
 /**
  * Settings skeleton: the core's preferences (`prefs.rs`, same file format as Linux and iPad),
- * saved on every change. Theme, size, line height and music volume apply now; the rest is
- * stored for the phases that use it (editor 4, sound 5, dialogs 6).
+ * saved on every change. Theme, size, line height, typing sound and the volumes apply now; the
+ * rest is stored for the phases that use it (dialogs 6).
  */
 @Composable
 fun SettingsScreen(
@@ -52,7 +52,7 @@ fun SettingsScreen(
             Level("Line height: %.2f".format(preferences.lineHeight), preferences.lineHeight, limits.minLineHeight..limits.maxLineHeight) {
                 onChange(preferences.copy(lineHeight = it))
             }
-            Toggle("Typing sound (phase 5)", preferences.typingSound) { onChange(preferences.copy(typingSound = it)) }
+            Toggle("Typing sound", preferences.typingSound) { onChange(preferences.copy(typingSound = it)) }
             Level("Typing sound volume", preferences.soundVolume, 0f..1f) { onChange(preferences.copy(soundVolume = it)) }
             Level("Music volume", preferences.musicVolume, 0f..1f) { onChange(preferences.copy(musicVolume = it)) }
         }

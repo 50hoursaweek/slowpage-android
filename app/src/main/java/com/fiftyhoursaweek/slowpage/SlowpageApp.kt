@@ -1,6 +1,7 @@
 package com.fiftyhoursaweek.slowpage
 
 import android.app.Application
+import com.fiftyhoursaweek.slowpage.audio.AudioController
 import com.fiftyhoursaweek.slowpage.store.DocumentStore
 import com.fiftyhoursaweek.slowpage.store.Recents
 import com.fiftyhoursaweek.slowpage.store.Recovery
@@ -17,6 +18,9 @@ class SlowpageApp : Application() {
     /** Text whose save failed, until a save works (survives process death and a closed task). */
     lateinit var recovery: Recovery
         private set
+    /** Typing sounds and music: one for the process, so a rotation never touches them (phase 5). Tests put in their own. */
+    lateinit var audio: AudioController
+        internal set
     val problems = StateProblems()
     val preferencesFile by lazy { File(filesDir, "preferences") }
 
@@ -26,5 +30,6 @@ class SlowpageApp : Application() {
         store = DocumentStore(File(filesDir, "documents"), limit)
         recovery = Recovery(File(filesDir, "recovery"), limit)
         recents = Recents(File(filesDir, "recents"))
+        audio = AudioController.create(this)
     }
 }

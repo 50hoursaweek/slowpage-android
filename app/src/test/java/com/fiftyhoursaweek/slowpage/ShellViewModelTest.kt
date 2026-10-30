@@ -23,11 +23,14 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import com.fiftyhoursaweek.slowpage.store.Recovery
+import com.fiftyhoursaweek.slowpage.audio.AudioController
+import com.fiftyhoursaweek.slowpage.audio.AudioControllerTest
 import com.fiftyhoursaweek.slowpage.editor.Command
 import com.fiftyhoursaweek.slowpage.editor.LineTable
 import com.fiftyhoursaweek.slowpage.editor.Paragraphs
 import com.fiftyhoursaweek.slowpage.preview.PreviewLook
 import uniffi.hushhour.FontChoice
+import uniffi.hushhour.MusicChoice
 import uniffi.hushhour.Theme
 import uniffi.hushhour.ViewMode
 import uniffi.hushhour.defaultPreferences
@@ -36,6 +39,7 @@ import uniffi.hushhour.nextFocus
 import uniffi.hushhour.nextTheme
 import uniffi.hushhour.serializePreferences
 import java.io.File
+import java.util.concurrent.Executors
 import java.time.Duration
 
 /**
@@ -51,11 +55,16 @@ class ShellViewModelTest {
     private val made = mutableListOf<ShellViewModel>()
     private val seen get() = made.map { it.notice to it.screen }
 
+    private val audioLane = Executors.newSingleThreadScheduledExecutor { Thread(it, "audio-test") }
+    private val mixer = AudioControllerTest.FakeMixer()
+
     @Before fun setUp() {
         app = RuntimeEnvironment.getApplication() as SlowpageApp
+        app.audio = AudioController({ mixer }, AudioControllerTest.FakeOutput(), audioLane)
     }
 
     @After fun tearDown() {
+        audioLane.shutdownNow()
         writable(app.store.folder, true)
         writable(app.recovery.folder, true)
         stores.forEach { it.clear() }
@@ -466,6 +475,44 @@ class ShellViewModelTest {
         assertTrue("a paste of ordinary paragraphs", vm.host.fits(0, 0, "x\n" + "y".repeat(1000) + "\n"))
         assertTrue("deleting within the long one", vm.host.fits(full.length - 1, full.length, ""))
         assertEquals(full, vm.editorText())
+    }
+
+    // ---- Phase 5: the music follows the document (A5)
+
+    @Test fun musicPlaysOnlyWhileADocumentIsOpenAndTheTrackStaysChecked() {
+        val vm = create(SavedStateHandle())
+        settle()
+        assertEquals("the app starts silent (A4)", MusicChoice.Off, vm.preferences.music)
+        // Checked on the start screen (the tour, phase 6): it waits for a document.
+        vm.setMusic(MusicChoice.Rain)
+        settle()
+        assertEquals(MusicChoice.Off, app.audio.playingMusic)
+        openNew(vm)
+        assertEquals("plays with the document", MusicChoice.Rain, app.audio.playingMusic)
+        // New over an open document is a switch: the music goes on.
+        vm.command(Command.NEW)
+        until("the next document") { vm.screen is Screen.Editor && mixer.music().size == 1 && vm.highlight != null }
+        settle()
+        assertEquals("switching keeps it playing", listOf("music ${MusicChoice.Rain}"), mixer.music())
+        vm.closeEditor()
+        until("closed") { vm.screen == Screen.Start }
+        assertEquals("the start screen is silent", MusicChoice.Off, app.audio.playingMusic)
+        assertEquals("the track stays checked", MusicChoice.Rain, vm.preferences.music)
+        openNew(vm)
+        assertEquals("and starts with the next document", MusicChoice.Rain, app.audio.playingMusic)
+        // Not saved: a new start is silent.
+        assertEquals(MusicChoice.Off, uniffi.hushhour.parsePreferences(app.preferencesFile.readText()).music)
+    }
+
+    @Test fun typingMakesOneKeySoundPerChangeByKind() {
+        val vm = create(SavedStateHandle())
+        openNew(vm)
+        vm.accept("a")
+        vm.accept("a\n")
+        vm.accept("a")
+        settle()
+        audioLane.submit {}.get()
+        assertEquals(listOf("CHARACTER", "ENTER", "BACKSPACE"), mixer.keys().map { it.split(' ')[1] })
     }
 
     // ---- helpers

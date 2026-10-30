@@ -62,7 +62,10 @@ import uniffi.hushhour.ViewMode
 import uniffi.hushhour.focusLabel
 import uniffi.hushhour.fontCharEm
 import uniffi.hushhour.fontLabel
+import uniffi.hushhour.SoundSet
 import uniffi.hushhour.limits
+import uniffi.hushhour.musicLabel
+import uniffi.hushhour.soundSetLabel
 import uniffi.hushhour.palette
 import uniffi.hushhour.themeLabel
 import uniffi.hushhour.viewLabel
@@ -86,6 +89,7 @@ fun EditorScreen(
     status: String,
     onExport: () -> Unit,
     onImport: () -> Unit,
+    onImportMusic: () -> Unit = {},
 ) {
     val prefs = vm.preferences
     val p = palette(prefs.theme)
@@ -105,7 +109,7 @@ fun EditorScreen(
         val panes = remember { Panes() }
 
         Column(Modifier.fillMaxSize()) {
-            TopLine(vm, name, status, onExport, onImport)
+            TopLine(vm, name, status, onExport, onImport, onImportMusic)
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 val divider = blend(p.text.compose(), p.background.compose(), 0.12f)
                 val gap = (TOP_INSET_DP * density).roundToInt()
@@ -269,7 +273,7 @@ private fun PreviewPane(vm: ShellViewModel, panes: Panes, side: Int, top: Int, m
 }
 
 @Composable
-private fun TopLine(vm: ShellViewModel, name: String, status: String, onExport: () -> Unit, onImport: () -> Unit) {
+private fun TopLine(vm: ShellViewModel, name: String, status: String, onExport: () -> Unit, onImport: () -> Unit, onImportMusic: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { vm.command(Command.CLOSE) }, enabled = !vm.closing) { Text("‹ Documents") }
@@ -284,13 +288,13 @@ private fun TopLine(vm: ShellViewModel, name: String, status: String, onExport: 
         )
         Box {
             TextButton(onClick = { vm.menuOpen = true }, modifier = Modifier.testTag(MENU_TAG)) { Text("Menu") }
-            EditorMenu(vm, onExport, onImport)
+            EditorMenu(vm, onExport, onImport, onImportMusic)
         }
     }
 }
 
 @Composable
-private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () -> Unit) {
+private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () -> Unit, onImportMusic: () -> Unit) {
     val p = vm.preferences
     fun run(action: () -> Unit) = { vm.menuOpen = false; action() }
     @Composable fun item(label: String, enabled: Boolean = true, checked: Boolean = false, action: () -> Unit) =
@@ -320,8 +324,26 @@ private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () ->
         HorizontalDivider()
         item("Larger text") { vm.command(Command.ZOOM_IN) }
         item("Smaller text") { vm.command(Command.ZOOM_OUT) }
+        // Sound for testing phase 5; the Sound and music dialog replaces these in phase 6.
+        HorizontalDivider()
+        for (choice in vm.musicChoices) item("Music: ${musicLabel(choice)}", checked = choice == p.music) { vm.setMusic(choice) }
+        item("Import music…") { onImportMusic() }
+        item("Music volume: ${percent(p.musicVolume)}  (louder)") { vm.updatePreferences(p.copy(musicVolume = step(p.musicVolume, 0.1f))) }
+        item("Music volume: ${percent(p.musicVolume)}  (quieter)") { vm.updatePreferences(p.copy(musicVolume = step(p.musicVolume, -0.1f))) }
+        HorizontalDivider()
+        item("Typing sound", checked = p.typingSound) { vm.updatePreferences(p.copy(typingSound = !p.typingSound)) }
+        for (set in SoundSet.entries) item("Typing sound: ${soundSetLabel(set)}", checked = set == p.soundSet) {
+            vm.updatePreferences(p.copy(soundSet = set))
+        }
+        item("Typing volume: ${percent(p.soundVolume)}  (louder)") { vm.updatePreferences(p.copy(soundVolume = step(p.soundVolume, 0.1f))) }
+        item("Typing volume: ${percent(p.soundVolume)}  (quieter)") { vm.updatePreferences(p.copy(soundVolume = step(p.soundVolume, -0.1f))) }
     }
 }
+
+private fun percent(v: Float) = "${(v * 100).roundToInt()}%"
+
+/** A volume one tenth up or down, kept in 0..1 and on the tenths. */
+private fun step(v: Float, by: Float) = (((v + by) * 10).roundToInt() / 10f).coerceIn(0f, 1f)
 
 /** Statistics and the switches, as the Linux status bar (E15). */
 @Composable
