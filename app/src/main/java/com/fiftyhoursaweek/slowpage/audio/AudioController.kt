@@ -92,6 +92,8 @@ class AudioController internal constructor(
     @Volatile private var musicVolume = 0.5f
     /** Orders [foreground] and [background] with the audio thread's allow; held only for a flag. */
     private val allowing = Any()
+    /** Counts foregrounds and backgrounds, under [allowing]. */
+    private var generation = 0L
 
     // ---- Audio thread only
     private var mixer: Mixer? = null
@@ -168,13 +170,23 @@ class AudioController internal constructor(
      * from [background] and a [silenceUntilDocument] from a removed task. Allowing it here, with
      * those still waiting on a busy thread, let the old stream resume the stale track on the
      * start screen (Codex phase 6 audit, BLOCKING 2).
+     *
+     * Each [foreground] and [background] starts a new [generation]; a queued foreground does
+     * anything only if none came after it. An older one still waiting behind a busy thread
+     * would otherwise allow the output, and restart the stream, before a later background's
+     * stop and silence had run (Codex phase 6 round 2).
      */
     fun foreground() {
-        synchronized(allowing) { foreground = true }
+        val mine = synchronized(allowing) {
+            foreground = true
+            ++generation
+        }
         val music = playingMusic
         lane.execute {
-            // Not if the app left the screen again meanwhile: [background] holds the same lock.
-            synchronized(allowing) { if (foreground) output.allow(true) }
+            synchronized(allowing) {
+                if (generation != mine) return@execute
+                output.allow(true)
+            }
             if (music != MusicChoice.Off) ensureRunning()
         }
     }
@@ -186,6 +198,7 @@ class AudioController internal constructor(
     fun background() {
         synchronized(allowing) {
             foreground = false
+            generation++
             output.allow(false)
         }
         lane.execute { stopStream() }

@@ -562,6 +562,57 @@ class ShellViewModelTest {
         assertFalse("left again before the thread got to it: stays not allowed", output.allowed)
     }
 
+    @Test fun anOlderForegroundStillQueuedNeverAllowsTheOutputBeforeALaterStopAndSilence() {
+        // Codex phase 6 round 2: a foreground F0 already queued behind a busy thread, then
+        // background and stop, onCleared and Off, foreground F1. Nothing is drained between.
+        mixer.active = true
+        val vm = create(SavedStateHandle())
+        openNew(vm)
+        vm.setMusic(MusicChoice.Rain)
+        audioLane.submit {}.get()
+        val busy = CountDownLatch(1)
+        audioLane.execute { busy.await(10, TimeUnit.SECONDS) }
+        app.audio.background()  // home
+        app.audio.foreground()  // back: F0, queued
+        app.audio.background()  // the task is removed
+        stores.removeAt(0).clear()  // onCleared: Off, queued
+        app.audio.foreground()  // a new window: F1
+        assertFalse(output.audible)
+        busy.countDown()
+        audioLane.submit {}.get()
+        assertEquals(
+            "F0 does nothing: the only allow is F1's, after the stop",
+            listOf("start", "allow false", "allow false", "stop", "allow true"),
+            output.log().filter { it != "opening" },
+        )
+        assertEquals(listOf("music ${MusicChoice.Rain}", "music ${MusicChoice.Off}"), mixer.music())
+        assertFalse("and nothing starts on the start screen", output.running)
+    }
+
+    @Test fun aFailedSampleOfATrackNotChosenLeavesTheMusicAndSaysOnlyThatItFailed() {
+        // Codex phase 6 round 2, MINOR: the chosen track plays on, so the notice does not say Off.
+        val vm = create(SavedStateHandle())
+        openNew(vm)
+        vm.setMusic(MusicChoice.Rain)
+        audioLane.submit {}.get()
+        val mine = MusicChoice.File("mine.mp3")
+        mixer.active = false  // the sample's file fails at once
+        vm.notice = null
+        vm.playSample(mine)
+        // Real time only: the quiet check runs on the audio thread's clock, and the sample's
+        // own ten seconds must not pass on the main looper's meanwhile.
+        val end = System.currentTimeMillis() + 10_000
+        while (vm.notice == null) {
+            if (System.currentTimeMillis() > end) fail("timed out: the failure reaches the view model")
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+        assertEquals("“${musicLabel(mine)}” could not be played.", vm.notice)
+        assertEquals(MusicChoice.Rain, vm.preferences.music)
+        assertEquals(MusicChoice.Rain, app.audio.playingMusic)
+        assertNull(vm.sample)
+    }
+
     @Test fun aTrackThatCannotBeDecodedIsUntickedAndTheStatusLineSaysSo() {
         // Codex phase 5, MINOR 3: a damaged file with a valid header imports, then fails in the core.
         val vm = create(SavedStateHandle())

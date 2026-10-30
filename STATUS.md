@@ -15,7 +15,8 @@
 - Emulator installed on `/Volumes/Expansion/hushhour-android-emulator` (sdk: emulator, platform-tools, AOSP arm64 API 31 image; AVD `slowpage-tablet` in `avd/`, 2000x1200, 240 dpi, landscape, no hardware keyboard; `user-home/` for ANDROID_USER_HOME).
 
 ## In progress
-- Phases 5+6 round 2 (handoff `audit/handoffs/2026-10-30-phase-5-6-round-2.md`): Codex's round 1 (`audit/phase-6/round-1-codex.md`) answered in `audit/phase-6/round-2-claude.md`. Fixed: B2 relaunch race (allow on the audio thread), the iPad's menu order, damaged tracks unticked with a notice. 162 JVM tests pass, lint 0 errors. Francesco's run of APK ab61c0c0 (661c65b): 7/7 PASS, no findings (`audit/phase-6/device-try-francesco.md`).
+- Phases 5+6 round 3, the last fix pass (handoff `audit/handoffs/2026-10-30-phase-5-6-round-3.md`): Codex round 2 (`audit/phase-6/round-2-codex.md`) verified the menu order and damaged tracks. Answered in `audit/phase-6/round-3-claude.md`: B2 with a lifecycle generation, and the failed-sample notice. 164 JVM tests pass, lint 0 errors.
+- Round 2 (19bf270, APK e10ed9ea): `audit/phase-6/round-2-claude.md`. Francesco's run of APK ab61c0c0 (661c65b): 7/7 PASS (`audit/phase-6/device-try-francesco.md`).
 
 ## Emulator
 - `/Volumes/Expansion/hushhour-android-emulator`. Start (stdin detached, ANDROID_HOME must point there too, the profile sets it to the old SDK):
@@ -27,4 +28,4 @@
 - Nothing.
 
 ## Next
-- Codex verification of round 2.
+- Codex verifies round 3 once.

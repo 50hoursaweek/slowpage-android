@@ -886,10 +886,18 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     /** Sound problems and samples for this view model; dropped from the process's controller in [onCleared]. */
     private val reportAudio: (String) -> Unit = { notice = it }
     private val sampleChanged: (MusicChoice?) -> Unit = { sample = it }
-    /** A track the core could not decode is unticked, and the status line says so (MINOR 3). */
+    /**
+     * A track the core could not decode is unticked, and the status line says so (MINOR 3). A
+     * sample of a track not chosen leaves the music as it was, and the notice says no more.
+     */
     private val musicFailed: (MusicChoice) -> Unit = { choice ->
-        if (preferences.music == choice) setMusic(MusicChoice.Off)
-        notice = "“${musicLabel(choice)}” could not be played, so Music is Off."
+        val name = "“${musicLabel(choice)}” could not be played"
+        if (preferences.music == choice) {
+            setMusic(MusicChoice.Off)
+            notice = "$name, so Music is Off."
+        } else {
+            notice = "$name."
+        }
     }
 
     override fun onCleared() {
