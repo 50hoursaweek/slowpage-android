@@ -452,8 +452,9 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     /** Undo state and statistics, the statistics after a pause (they count the whole text). */
     private fun updateEditState() {
         val s = session ?: return
-        canUndo = s.canUndo()
-        canRedo = s.canRedo()
+        // A read-only document has a history only from a recovery (round 3): never offered.
+        canUndo = readOnly == null && s.canUndo()
+        canRedo = readOnly == null && s.canRedo()
         statsJob?.cancel()
         statsJob = viewModelScope.launch {
             delay(STATS_DELAY_MS)
@@ -490,14 +491,22 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             Command.ZOOM_IN -> zoom(1f)
             Command.ZOOM_OUT -> zoom(-1f)
             Command.VIEW -> setView(nextView(viewMode))
-            // Not while a text goes into the editor (round 2): the change would need all of it.
-            Command.UNDO -> session?.let { s -> if (!closing && !editorBusy) s.undo()?.let { applyCoreChange(s, it) } }
-            Command.REDO -> session?.let { s -> if (!closing && !editorBusy) s.redo()?.let { applyCoreChange(s, it) } }
+            Command.UNDO -> session?.let { s -> if (historyOpen()) s.undo()?.let { applyCoreChange(s, it) } }
+            Command.REDO -> session?.let { s -> if (historyOpen()) s.redo()?.let { applyCoreChange(s, it) } }
             Command.NEW -> if (session == null) newDocument() else closeEditor(then = ::newDocument)
             Command.OPEN, Command.CLOSE -> closeEditor()
             Command.IMPORT -> Unit  // the activity starts the system picker
         }
     }
+
+    /**
+     * Whether undo and redo may change the document, from the menu, a shortcut or the editor.
+     * Not while a close writes the text (D4), nor while a text goes into the editor (round 2: the
+     * change would need all of it). Never in a read-only document (round 3, Codex NEW-B1): one
+     * opened with recovered text has that recovery in its history, and an undo would change the
+     * hidden core and save the older text over the recovered one.
+     */
+    private fun historyOpen() = !closing && !editorBusy && readOnly == null
 
     /** One point larger or smaller, within the core's limits (E3). */
     private fun zoom(step: Float) {

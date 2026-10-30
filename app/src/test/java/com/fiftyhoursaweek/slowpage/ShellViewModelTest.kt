@@ -425,6 +425,30 @@ class ShellViewModelTest {
         assertNull(vm.readOnly)
     }
 
+    @Test fun aRecoveredDocumentOverTheCapKeepsTheRecoveredTextWhateverUndoIsTried() {
+        // Round 3, Codex NEW-B1: the recovery is applied as an edit before the cap is checked,
+        // so it is in the history; an undo used to put the older text back and save it.
+        val vm = create(SavedStateHandle())
+        settle()
+        val older = "Older version\n" + "o".repeat(Paragraphs.CAP + 1)
+        val recovered = "Recovered version\n" + "r".repeat(Paragraphs.CAP + 1)
+        app.store.write("Kept.md", older)
+        assertTrue(app.recovery.write("Kept.md", recovered, stamp = System.currentTimeMillis() + 60_000) == null)
+        vm.open("Kept.md")
+        until("it opens read-only") { vm.readOnly != null }
+        assertEquals(recovered, vm.readOnly!!.text)
+        assertFalse("no Undo offered", vm.canUndo)
+        // The menu item, Ctrl+Z, Ctrl+Shift+Z and the editor all come here.
+        vm.command(Command.UNDO)
+        vm.command(Command.REDO)
+        vm.host.undo()
+        until("the recovered text is on disk") { app.store.read("Kept.md") == recovered }
+        vm.closeEditor()
+        until("closed") { vm.screen == Screen.Start }
+        assertEquals("still the recovered text", recovered, app.store.read("Kept.md"))
+        until("and the recovery copy is no longer needed") { !app.recovery.has("Kept.md") }
+    }
+
     @Test fun anEditThatWouldMakeAParagraphOverTheCapIsRefusedWithANotice() {
         val vm = create(SavedStateHandle())
         openNew(vm)
