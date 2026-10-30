@@ -2,6 +2,7 @@
 
 ## Done
 - Phase 4 editor (E1–E15, V1–V6, K1): `audit/phase-4/editor-choice.md`, emulator notes in `audit/phase-4/emulator/README.md`. Francesco's run: tests 1–8 PASS on the Huawei (`audit/phase-4/device-try-francesco.md`).
+- Phase 4 round 3 (Codex NEW-B1: no undo or redo in a read-only document; recovered text kept): `audit/phase-4/round-3-claude.md`. 126 JVM tests pass, lint 0 errors.
 - Phase 4 round 2 (Codex new BLOCKING: input during a relayout; BLOCKING 3 by ruling B: paragraph cap 100,000, read-only over it; MINOR 5 checked on API 28; MINOR 6 re-measured): `audit/phase-4/round-2-claude.md`, code 189f040. 125 JVM tests pass, lint 0 errors.
 - Phase 4 round 1 (Codex BLOCKING 1–3, MINOR 5–6, Francesco F1–F3): `audit/phase-4/round-1-claude.md`, code bddc7c7. Francesco's retest of APK 459a4688: PASS.
 - Gate A: closed (Francesco heard the music; CLOSED-AGREED 2026-10-29 in `audit/LATEST.md`).
@@ -11,7 +12,7 @@
 - Emulator installed on `/Volumes/Expansion/hushhour-android-emulator` (sdk: emulator, platform-tools, AOSP arm64 API 31 image; AVD `slowpage-tablet` in `avd/`, 2000x1200, 240 dpi, landscape, no hardware keyboard; `user-home/` for ANDROID_USER_HOME).
 
 ## In progress
-- Phase 4 round 2 APK sent to PMO (last fix round). Waiting for Codex's verification and Francesco's try.
+- Phase 4 round 3 APK sent to PMO (last pass). Waiting for Codex's verification.
 
 ## Emulator
 - `/Volumes/Expansion/hushhour-android-emulator`. Start (stdin detached, ANDROID_HOME must point there too, the profile sets it to the old SDK):
