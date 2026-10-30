@@ -11,6 +11,7 @@
     <application
         android:name=".SlowpageApp"
         android:label="Slowpage"
+        android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:largeHeap="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">

@@ -2,11 +2,13 @@
 # Gate A: build hushhour-ipad (inkpad-ipados/HushHourCore) for arm64-v8a and generate its
 # Kotlin bindings. The crate is consumed at a pinned revision, never edited here.
 # Output (not committed): rust-out/jniLibs/arm64-v8a/libhushhour_ipad.so, rust-out/kotlin/,
-# rust-out/assets/music/, rust-out/assets/fonts/, rust-out/assets/licences/, rust-out/assets/about/, rust-out/host/libhushhour_ipad.dylib (for JVM unit tests).
+# rust-out/assets/music/, rust-out/assets/fonts/, rust-out/assets/licences/, rust-out/assets/about/, rust-out/res/mipmap-*/ (launcher icon), rust-out/host/libhushhour_ipad.dylib (for JVM unit tests).
 set -eu
 
 REV=873d4f4c74ea22a52658494f2697e86c3a146ddf   # inkpad-ipados: "add cdylib crate type"
+# The iPad repository: a local clone if there is one, else GitHub (or INKPAD_IPADOS_REPO, a path or URL).
 SRC=${INKPAD_IPADOS_REPO:-$HOME/Dev/inkpad-ipados}
+[ -n "${INKPAD_IPADOS_REPO:-}" ] || [ -d "$SRC/.git" ] || SRC=https://github.com/50hoursaweek/inkpad-ipados
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORK=$ROOT/build/inkpad-ipados
 OUT=$ROOT/rust-out
@@ -64,5 +66,23 @@ for f in LICENSE-Slowpage.txt LICENSE-hushhour-core.txt LICENSE-sounds.md LICENS
     cp "$WORK/HushHour/HushHour/Resources/Licences/$f" "$OUT/assets/licences/"
 done
 cp "$WORK/HushHour/HushHour/Resources/Assets.xcassets/Icon.imageset/"Icon-*.png "$OUT/assets/about/"
+
+# Phase 7: the launcher icon, the iPad's app icon (light), unchanged art. Below Android 8 the
+# square as it is (48 dp); from 8 on the adaptive icon (app/src/main/res/mipmap-anydpi-v26)
+# draws it at 66 dp in the middle of the 108 dp layer, padded with its own background colour
+# (#F6EBD6), so the launcher's mask never cuts the strokes.
+ICON="$WORK/HushHour/HushHour/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-light-1024.png"
+rm -rf "$OUT/res"
+for d in mdpi:1 hdpi:1.5 xhdpi:2 xxhdpi:3 xxxhdpi:4; do
+    dir="$OUT/res/mipmap-${d%%:*}"
+    scale=${d#*:}
+    mkdir -p "$dir"
+    legacy=$(echo "48 * $scale / 1" | bc)
+    art=$(echo "66 * $scale / 1" | bc)
+    layer=$(echo "108 * $scale / 1" | bc)
+    sips -z "$legacy" "$legacy" "$ICON" --out "$dir/ic_launcher.png" >/dev/null
+    sips -z "$art" "$art" "$ICON" --out "$dir/ic_launcher_foreground.png" >/dev/null
+    sips -p "$layer" "$layer" --padColor F6EBD6 "$dir/ic_launcher_foreground.png" >/dev/null 2>&1
+done
 
 find "$OUT" -type f | sed "s|$ROOT/||" | sort

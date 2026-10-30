@@ -16,7 +16,7 @@
 - Emulator installed on `/Volumes/Expansion/hushhour-android-emulator` (sdk: emulator, platform-tools, AOSP arm64 API 31 image; AVD `slowpage-tablet` in `avd/`, 2000x1200, 240 dpi, landscape, no hardware keyboard; `user-home/` for ANDROID_USER_HOME).
 
 ## In progress
-- Nothing. Waiting for Francesco before phase 7.
+- Phase 7, release prep (handoff `audit/handoffs/2026-10-30-phase-7-release.md`, notes `audit/phase-7/notes.md`): LICENSE, THIRD-PARTY-NOTICES.md, README, release-notes draft, version 1.0.0 (code 4), launcher icon (the iPad's), optional release signing in Gradle, `scripts/make-release-key.sh`, history scan (H1–H6 for Francesco).
 
 ## Emulator
 - `/Volumes/Expansion/hushhour-android-emulator`. Start (stdin detached, ANDROID_HOME must point there too, the profile sets it to the old SDK):
@@ -25,7 +25,8 @@
 - Also an API 28 AVD, `slowpage-api28` (same command with `-avd slowpage-api28`), for the caret on 26–28. With 8 GiB of RAM, run one emulator at a time.
 
 ## Blocked
-- Nothing.
+- Release key: creating it was refused by this session's permission check; Francesco runs `scripts/make-release-key.sh` once (keystore `~/.android-keys/slowpage-release.jks`, password in the Keychain). Then `scripts/release-apk.sh --release`.
+- Decisions for Francesco before going public: H1 (author email in commits), H6 (`inkpad-ipados` is private; build from source needs it), music-loop CC0 claim (Lyria 3 terms). See `audit/phase-7/notes.md`.
 
 ## Next
-- Phase 7, when Francesco says.
+- The release-signed APK, then PMO's Codex audit, then Francesco's install test (uninstall the debug build first).

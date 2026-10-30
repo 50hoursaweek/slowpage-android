@@ -7,6 +7,16 @@ plugins {
 
 val rustOut = rootProject.file("rust-out")
 
+// The release key (phase 7), from the environment or a Gradle property, never from the repo:
+// SLOWPAGE_KEYSTORE (path) and SLOWPAGE_KEYSTORE_PASSWORD, or slowpage.keystore and
+// slowpage.keystorePassword in ~/.gradle/gradle.properties. scripts/release-apk.sh takes the
+// password from the macOS Keychain. Without them a release build is signed with the debug key,
+// so the project builds for anyone.
+fun setting(env: String, property: String): String? =
+    System.getenv(env)?.takeIf { it.isNotEmpty() } ?: (findProperty(property) as String?)?.takeIf { it.isNotEmpty() }
+val releaseKeystore = setting("SLOWPAGE_KEYSTORE", "slowpage.keystore")?.let { file(it) }?.takeIf { it.isFile }
+val releasePassword = setting("SLOWPAGE_KEYSTORE_PASSWORD", "slowpage.keystorePassword")
+
 android {
     namespace = "com.fiftyhoursaweek.slowpage"
     compileSdk = 36
@@ -16,8 +26,8 @@ android {
         applicationId = "be.grunt.slowpage"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.1.0"
+        versionCode = 4
+        versionName = "1.0.0"
         ndk { abiFilters += "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
@@ -28,13 +38,23 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseKeystore != null && releasePassword != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = releasePassword
+                keyAlias = "slowpage"
+                keyPassword = releasePassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Sideloaded internal builds: signed with the debug key until Francesco decides on a key.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
@@ -42,6 +62,7 @@ android {
         jniLibs.directories += rustOut.resolve("jniLibs").path
         kotlin.directories += rustOut.resolve("kotlin").path
         assets.directories += rustOut.resolve("assets").path
+        res.directories += rustOut.resolve("res").path
     }
 
     externalNativeBuild {

@@ -7,3 +7,8 @@ local.properties
 *.iml
 app/.cxx/
 .kotlin/
+.DS_Store
+# Signing keys and their settings never go in the repo (phase 7).
+*.jks
+*.keystore
+keystore.properties
