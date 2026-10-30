@@ -1,6 +1,7 @@
 # Status
 
 ## Done
+- Phases 5+6 audit: CLOSED-AGREED 2026-10-30 (`audit/phase-6/round-3-codex-verification.md`, line in `audit/LATEST.md`). Code b2566b7, APK 81ae33c3…. Rounds: `audit/phase-6/round-2-claude.md`, `round-3-claude.md`. Open MINOR: a damaged file with a valid header still imports (reported on first play).
 - Phases 5+6 merged (661c65b, APK ab61c0c0): Codex phase 5 round 1 fixes, the iPad's dialogs, welcome tour and background pattern; Francesco's run 7/7 PASS.
 - Phase 5 (audio), Francesco's run on APK 0b78f921: 7/7 PASS (`audit/phase-5/device-try-francesco.md`).
 - Phase 4 audit: CLOSED-AGREED 2026-10-30 (`audit/phase-4/round-3-codex-verification.md`, line in `audit/LATEST.md`). Code 36159ac, APK be304349….
@@ -15,8 +16,7 @@
 - Emulator installed on `/Volumes/Expansion/hushhour-android-emulator` (sdk: emulator, platform-tools, AOSP arm64 API 31 image; AVD `slowpage-tablet` in `avd/`, 2000x1200, 240 dpi, landscape, no hardware keyboard; `user-home/` for ANDROID_USER_HOME).
 
 ## In progress
-- Phases 5+6 round 3, the last fix pass (handoff `audit/handoffs/2026-10-30-phase-5-6-round-3.md`): Codex round 2 (`audit/phase-6/round-2-codex.md`) verified the menu order and damaged tracks. Answered in `audit/phase-6/round-3-claude.md`: B2 with a lifecycle generation, and the failed-sample notice. 164 JVM tests pass, lint 0 errors.
-- Round 2 (19bf270, APK e10ed9ea): `audit/phase-6/round-2-claude.md`. Francesco's run of APK ab61c0c0 (661c65b): 7/7 PASS (`audit/phase-6/device-try-francesco.md`).
+- Nothing. Waiting for Francesco before phase 7.
 
 ## Emulator
 - `/Volumes/Expansion/hushhour-android-emulator`. Start (stdin detached, ANDROID_HOME must point there too, the profile sets it to the old SDK):
@@ -28,4 +28,4 @@
 - Nothing.
 
 ## Next
-- Codex verifies round 3 once.
+- Phase 7, when Francesco says.
