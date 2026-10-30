@@ -19,6 +19,10 @@ object MusicFiles {
 
     fun userDir(context: Context) = File(context.filesDir, "music/user").apply { mkdirs() }
 
+    /** The bundled tracks' file names, read from the APK (nothing copied), in the core's order. */
+    fun bundledNames(context: Context): List<String> =
+        context.assets.list(ASSET_DIR).orEmpty().filter { it.endsWith(".ogg") }.sortedBy { it.lowercase() }
+
     /** Copies the bundled tracks if this version has not done so yet; returns the directory. */
     fun install(context: Context): File {
         val dir = bundledDir(context)
@@ -51,10 +55,11 @@ object MusicFiles {
 
     /**
      * Copy a picked music file into [userDir] under a free name, keeping its extension; returns
-     * the name. Refuses a type the core cannot play and a file over [IMPORT_LIMIT_BYTES]. Written
-     * under a temporary name and renamed, so a half-copied track never shows in the list. Blocking.
+     * the name. Refuses a type the core cannot play, a file whose first bytes are not one
+     * (Codex phase 5, MINOR 3: a renamed or empty file), and a file over [limit]. Written under a
+     * temporary name and renamed, so a half-copied track never shows in the list. Blocking.
      */
-    fun import(context: Context, displayName: String?, input: InputStream): String {
+    fun import(context: Context, displayName: String?, input: InputStream, limit: Long = IMPORT_LIMIT_BYTES): String {
         val (rawBase, rawExt) = Names.split(displayName?.trim().orEmpty())
         val ext = rawExt.lowercase()
         if (ext !in PLAYABLE) throw ImportError("Slowpage plays MP3, OGG, FLAC and WAV files.")
@@ -69,11 +74,12 @@ object MusicFiles {
                     val n = input.read(buffer)
                     if (n < 0) break
                     total += n
-                    if (total > IMPORT_LIMIT_BYTES) throw ImportError("The file is larger than ${IMPORT_LIMIT_BYTES / (1024 * 1024)} MiB.")
+                    if (total > limit) throw ImportError("The file is larger than ${limit / (1024 * 1024)} MiB.")
                     out.write(buffer, 0, n)
                 }
                 out.fd.sync()
             }
+            if (!looksPlayable(temp)) throw ImportError("This is not an MP3, OGG, FLAC or WAV file the player can read.")
             synchronized(this) {
                 val name = generateSequence(1) { it + 1 }.map { Names.numbered(base, ext, it) }.first { !File(dir, it).exists() }
                 if (!temp.renameTo(File(dir, name))) throw IOException("could not store $name")
@@ -82,6 +88,26 @@ object MusicFiles {
         } finally {
             temp.delete()
         }
+    }
+
+    /**
+     * Whether [file] starts as an MP3 (an ID3 tag or a frame header), an OGG, a FLAC or a WAV
+     * does. Whatever the name says: the core picks the decoder from the contents.
+     */
+    fun looksPlayable(file: File): Boolean {
+        val head = ByteArray(12)
+        val n = file.inputStream().use { input ->
+            var read = 0
+            while (read < head.size) {
+                val r = input.read(head, read, head.size - read)
+                if (r < 0) break
+                read += r
+            }
+            read
+        }
+        fun ascii(at: Int, text: String) = n >= at + text.length && text.indices.all { head[at + it] == text[it].code.toByte() }
+        val frameSync = n >= 2 && head[0] == 0xFF.toByte() && (head[1].toInt() and 0xE0) == 0xE0
+        return ascii(0, "ID3") || frameSync || ascii(0, "OggS") || ascii(0, "fLaC") || (ascii(0, "RIFF") && ascii(8, "WAVE"))
     }
 
     /** Remove temporary files a killed import left behind. */

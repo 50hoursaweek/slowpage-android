@@ -57,17 +57,18 @@ class ShellViewModelTest {
 
     private val audioLane = Executors.newSingleThreadScheduledExecutor { Thread(it, "audio-test") }
     private val mixer = AudioControllerTest.FakeMixer()
+    private val output = AudioControllerTest.FakeOutput()
 
     @Before fun setUp() {
         app = RuntimeEnvironment.getApplication() as SlowpageApp
-        app.audio = AudioController({ mixer }, AudioControllerTest.FakeOutput(), audioLane)
+        app.audio = AudioController({ mixer }, output, audioLane)
     }
 
     @After fun tearDown() {
-        audioLane.shutdownNow()
         writable(app.store.folder, true)
         writable(app.recovery.folder, true)
         stores.forEach { it.clear() }
+        audioLane.shutdownNow()
     }
 
     // ---- BLOCKING 1: unsaved text after a failed save
@@ -502,6 +503,29 @@ class ShellViewModelTest {
         assertEquals("and starts with the next document", MusicChoice.Rain, app.audio.playingMusic)
         // Not saved: a new start is silent.
         assertEquals(MusicChoice.Off, uniffi.hushhour.parsePreferences(app.preferencesFile.readText()).music)
+    }
+
+    @Test fun aRemovedTaskLeavesNoMusicForTheNextWindowAndNoViewModelBehind() {
+        // Codex phase 5, BLOCKING 2 and MINOR 5: the process stays, the task goes.
+        mixer.active = true
+        val vm = create(SavedStateHandle())
+        openNew(vm)
+        vm.setMusic(MusicChoice.Rain)
+        audioLane.submit {}.get()
+        assertEquals(listOf("start"), output.all())
+        app.audio.background()  // onStop
+        stores.removeAt(0).clear()  // onCleared
+        assertEquals(MusicChoice.Off, app.audio.playingMusic)
+        assertNull("the controller keeps nothing of the cleared view model", app.audio.onProblem)
+        app.audio.foreground()  // a new window, before its view model has read the preferences
+        settle()
+        audioLane.submit {}.get()
+        assertEquals("nothing starts on the start screen", listOf("start", "stop"), output.all())
+        assertEquals(listOf("music ${MusicChoice.Rain}", "music ${MusicChoice.Off}"), mixer.music())
+        val next = create(SavedStateHandle())
+        settle()
+        assertEquals(MusicChoice.Off, next.preferences.music)
+        assertNotNull(app.audio.onProblem)
     }
 
     @Test fun typingMakesOneKeySoundPerChangeByKind() {

@@ -40,7 +40,7 @@ class AudioLifecycleTest {
         app.audio = AudioController({ mixer }, output, lane)
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         val vm = ViewModelProvider(controller.get())[ShellViewModel::class.java]
-        until("ready") { vm.preferences.size > 0 }
+        until("ready") { vm.loaded }
         vm.newDocument()
         until("a document") { vm.screen is Screen.Editor }
         vm.setMusic(MusicChoice.Rain)

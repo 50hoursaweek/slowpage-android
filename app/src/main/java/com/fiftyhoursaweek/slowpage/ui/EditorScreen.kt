@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.fiftyhoursaweek.slowpage.Dialog
 import com.fiftyhoursaweek.slowpage.R
 import com.fiftyhoursaweek.slowpage.ShellViewModel
 import com.fiftyhoursaweek.slowpage.editor.Command
@@ -62,10 +63,8 @@ import uniffi.hushhour.ViewMode
 import uniffi.hushhour.focusLabel
 import uniffi.hushhour.fontCharEm
 import uniffi.hushhour.fontLabel
-import uniffi.hushhour.SoundSet
+import uniffi.hushhour.Backdrop
 import uniffi.hushhour.limits
-import uniffi.hushhour.musicLabel
-import uniffi.hushhour.soundSetLabel
 import uniffi.hushhour.palette
 import uniffi.hushhour.themeLabel
 import uniffi.hushhour.viewLabel
@@ -89,7 +88,6 @@ fun EditorScreen(
     status: String,
     onExport: () -> Unit,
     onImport: () -> Unit,
-    onImportMusic: () -> Unit = {},
 ) {
     val prefs = vm.preferences
     val p = palette(prefs.theme)
@@ -108,8 +106,12 @@ fun EditorScreen(
         SideEffect { vm.previewLook = PreviewLook(prefs.theme, prefs.font, sizePx, prefs.lineHeight) }
         val panes = remember { Panes() }
 
+        // The background pattern, behind everything on the page (E16); not made at all while Off.
+        if (prefs.backdrop != Backdrop.OFF) {
+            BackdropLayer(prefs.backdrop, p, typedAt = { vm.lastEditAt }, modifier = Modifier.fillMaxSize().testTag(BACKDROP_TAG))
+        }
         Column(Modifier.fillMaxSize()) {
-            TopLine(vm, name, status, onExport, onImport, onImportMusic)
+            TopLine(vm, name, status, onExport, onImport)
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 val divider = blend(p.text.compose(), p.background.compose(), 0.12f)
                 val gap = (TOP_INSET_DP * density).roundToInt()
@@ -273,9 +275,10 @@ private fun PreviewPane(vm: ShellViewModel, panes: Panes, side: Int, top: Int, m
 }
 
 @Composable
-private fun TopLine(vm: ShellViewModel, name: String, status: String, onExport: () -> Unit, onImport: () -> Unit, onImportMusic: () -> Unit) {
+private fun TopLine(vm: ShellViewModel, name: String, status: String, onExport: () -> Unit, onImport: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    // On the plain page colour, as the status line: the background pattern shows only behind the page.
+    Row(Modifier.fillMaxWidth().background(colors.background).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { vm.command(Command.CLOSE) }, enabled = !vm.closing) { Text("‹ Documents") }
         Text(name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
         Text(
@@ -288,13 +291,13 @@ private fun TopLine(vm: ShellViewModel, name: String, status: String, onExport: 
         )
         Box {
             TextButton(onClick = { vm.menuOpen = true }, modifier = Modifier.testTag(MENU_TAG)) { Text("Menu") }
-            EditorMenu(vm, onExport, onImport, onImportMusic)
+            EditorMenu(vm, onExport, onImport)
         }
     }
 }
 
 @Composable
-private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () -> Unit, onImportMusic: () -> Unit) {
+private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () -> Unit) {
     val p = vm.preferences
     fun run(action: () -> Unit) = { vm.menuOpen = false; action() }
     @Composable fun item(label: String, enabled: Boolean = true, checked: Boolean = false, action: () -> Unit) =
@@ -307,6 +310,10 @@ private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () ->
         HorizontalDivider()
         item("Undo", enabled = vm.canUndo && !vm.editorBusy) { vm.command(Command.UNDO) }
         item("Redo", enabled = vm.canRedo && !vm.editorBusy) { vm.command(Command.REDO) }
+        HorizontalDivider()
+        // The settings in their dialogs, as on the iPad (O5).
+        item("Appearance…") { vm.showDialog(Dialog.APPEARANCE) }
+        item("Sound and music…") { vm.showDialog(Dialog.SOUND) }
         HorizontalDivider()
         for (mode in ViewMode.entries) item("View: ${viewLabel(mode)}", enabled = vm.readOnly == null, checked = mode == vm.viewMode) { vm.setView(mode) }
         HorizontalDivider()
@@ -324,26 +331,11 @@ private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () ->
         HorizontalDivider()
         item("Larger text") { vm.command(Command.ZOOM_IN) }
         item("Smaller text") { vm.command(Command.ZOOM_OUT) }
-        // Sound for testing phase 5; the Sound and music dialog replaces these in phase 6.
         HorizontalDivider()
-        for (choice in vm.musicChoices) item("Music: ${musicLabel(choice)}", checked = choice == p.music) { vm.setMusic(choice) }
-        item("Import music…") { onImportMusic() }
-        item("Music volume: ${percent(p.musicVolume)}  (louder)") { vm.updatePreferences(p.copy(musicVolume = step(p.musicVolume, 0.1f))) }
-        item("Music volume: ${percent(p.musicVolume)}  (quieter)") { vm.updatePreferences(p.copy(musicVolume = step(p.musicVolume, -0.1f))) }
-        HorizontalDivider()
-        item("Typing sound", checked = p.typingSound) { vm.updatePreferences(p.copy(typingSound = !p.typingSound)) }
-        for (set in SoundSet.entries) item("Typing sound: ${soundSetLabel(set)}", checked = set == p.soundSet) {
-            vm.updatePreferences(p.copy(soundSet = set))
-        }
-        item("Typing volume: ${percent(p.soundVolume)}  (louder)") { vm.updatePreferences(p.copy(soundVolume = step(p.soundVolume, 0.1f))) }
-        item("Typing volume: ${percent(p.soundVolume)}  (quieter)") { vm.updatePreferences(p.copy(soundVolume = step(p.soundVolume, -0.1f))) }
+        item("Welcome…") { vm.showWelcome() }
+        item("About Slowpage…") { vm.showDialog(Dialog.ABOUT) }
     }
 }
-
-private fun percent(v: Float) = "${(v * 100).roundToInt()}%"
-
-/** A volume one tenth up or down, kept in 0..1 and on the tenths. */
-private fun step(v: Float, by: Float) = (((v + by) * 10).roundToInt() / 10f).coerceIn(0f, 1f)
 
 /** Statistics and the switches, as the Linux status bar (E15). */
 @Composable
@@ -428,3 +420,4 @@ const val HINT_TAG = "previewHint"
 const val MENU_TAG = "menu"
 const val READ_ONLY_TAG = "readOnly"
 const val BUSY_TAG = "editorBusy"
+const val BACKDROP_TAG = "backdrop"

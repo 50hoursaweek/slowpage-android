@@ -26,10 +26,11 @@ import androidx.compose.ui.Modifier
 import com.fiftyhoursaweek.slowpage.editor.Command
 import com.fiftyhoursaweek.slowpage.editor.Shortcuts
 import com.fiftyhoursaweek.slowpage.store.Names
+import com.fiftyhoursaweek.slowpage.ui.DialogSheet
 import com.fiftyhoursaweek.slowpage.ui.EditorScreen
-import com.fiftyhoursaweek.slowpage.ui.SettingsScreen
 import com.fiftyhoursaweek.slowpage.ui.SlowpageTheme
 import com.fiftyhoursaweek.slowpage.ui.StartScreen
+import com.fiftyhoursaweek.slowpage.ui.WelcomeTour
 
 /** The one window (L3: `singleTask`, one document at a time). */
 class MainActivity : ComponentActivity() {
@@ -78,7 +79,6 @@ class MainActivity : ComponentActivity() {
                             problems = vm.problems,
                             onNew = vm::newDocument,
                             onImport = ::startImport,
-                            onSettings = vm::openSettings,
                             onOpen = vm::open,
                             onExport = ::startExport,
                             onDelete = vm::delete,
@@ -89,18 +89,16 @@ class MainActivity : ComponentActivity() {
                             status = (listOf(vm.status) + vm.problems).filter { it.isNotEmpty() }.joinToString(" · "),
                             onExport = { startExport(screen.name) },
                             onImport = ::startImport,
-                            onImportMusic = { musicImporter.launch(arrayOf("audio/*", "application/ogg")) },
-                        )
-                        Screen.Settings -> SettingsScreen(
-                            preferences = vm.preferences,
-                            problems = vm.problems,
-                            onChange = { p ->
-                                vm.updatePreferences(p)
-                            },
-                            onBack = { vm.back() },
                         )
                     }
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
+                }
+                // Over whichever screen, in windows of their own (keys go to them, not the editor).
+                vm.dialog?.let { dialog ->
+                    DialogSheet(dialog, vm, onImportMusic = { musicImporter.launch(arrayOf("audio/*", "application/ogg")) })
+                }
+                if (vm.tourOffersStart != null) {
+                    WelcomeTour(vm) { exit -> if (vm.finishTour(exit) && exit == TourExit.IMPORT) startImport() }
                 }
             }
         }
@@ -128,10 +126,8 @@ class MainActivity : ComponentActivity() {
             Screen.Start -> when (command) {
                 Command.NEW -> vm.newDocument()
                 Command.IMPORT -> startImport()
-                Command.MENU -> vm.openSettings()
                 else -> return super.dispatchKeyEvent(event)
             }
-            Screen.Settings -> return super.dispatchKeyEvent(event)
         }
         return true
     }

@@ -16,9 +16,10 @@ android {
         applicationId = "be.grunt.slowpage"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.0-shell"
+        versionCode = 3
+        versionName = "0.1.0"
         ndk { abiFilters += "arm64-v8a" }
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
             cmake {
                 arguments += "-DANDROID_STL=c++_shared"
@@ -65,6 +66,8 @@ android {
     buildFeatures {
         prefab = true
         compose = true
+        // About shows the version and build (O5).
+        buildConfig = true
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -88,6 +91,9 @@ dependencies {
     implementation("androidx.annotation:annotation:1.10.0")
 
     testImplementation("junit:junit:4.13.2")
+    // On the emulator: the background shader against the core's reference (E16), as the iPad tests its Metal port.
+    androidTestImplementation("androidx.test:runner:1.5.0")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
     // Compose UI tests on the JVM (Robolectric): focus and taps in the editor (F1).
     testImplementation(platform("androidx.compose:compose-bom:2026.06.01"))
     testImplementation("androidx.compose.ui:ui-test-junit4")

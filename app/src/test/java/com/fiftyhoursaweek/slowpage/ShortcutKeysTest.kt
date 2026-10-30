@@ -36,7 +36,7 @@ class ShortcutKeysTest {
     @Test fun ctrlChordsDriveTheEditor() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         val vm = ViewModelProvider(activity)[ShellViewModel::class.java]
-        until("ready") { vm.preferences.size > 0 }
+        until("ready") { vm.loaded }
         chord(activity, KeyEvent.KEYCODE_N)
         until("Ctrl+N opens a new document") { vm.screen is Screen.Editor && vm.highlight != null }
         idle()

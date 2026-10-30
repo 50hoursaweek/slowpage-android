@@ -1,6 +1,7 @@
 # Status
 
 ## Done
+- Phase 5 (audio), Francesco's run on APK 0b78f921: 7/7 PASS (`audit/phase-5/device-try-francesco.md`).
 - Phase 4 audit: CLOSED-AGREED 2026-10-30 (`audit/phase-4/round-3-codex-verification.md`, line in `audit/LATEST.md`). Code 36159ac, APK be304349….
 - Phase 4 editor (E1–E15, V1–V6, K1): `audit/phase-4/editor-choice.md`, emulator notes in `audit/phase-4/emulator/README.md`. Francesco's run: tests 1–8 PASS on the Huawei (`audit/phase-4/device-try-francesco.md`).
 - Phase 4 round 3 (Codex NEW-B1: no undo or redo in a read-only document; recovered text kept): `audit/phase-4/round-3-claude.md`. 126 JVM tests pass, lint 0 errors.
@@ -13,7 +14,7 @@
 - Emulator installed on `/Volumes/Expansion/hushhour-android-emulator` (sdk: emulator, platform-tools, AOSP arm64 API 31 image; AVD `slowpage-tablet` in `avd/`, 2000x1200, 240 dpi, landscape, no hardware keyboard; `user-home/` for ANDROID_USER_HOME).
 
 ## In progress
-- Phase 5 (audio): built, emulator-checked; APK sent to PMO for Francesco's try (`audit/phase-5/audio.md`).
+- Phases 5 and 6 merged (handoff `audit/handoffs/2026-10-30-phase-5-6-merged.md`): Codex phase 5 round 1 answered (`audit/phase-5/round-1-claude.md`: B1, B2, M3–M5 fixed; F1 explained); the iPad's dialogs, welcome tour and background pattern ported (`audit/phase-6/notes.md`). 159 JVM tests and 2 emulator tests pass, lint 0 errors. One APK to PMO for Francesco's run, then one Codex audit.
 
 ## Emulator
 - `/Volumes/Expansion/hushhour-android-emulator`. Start (stdin detached, ANDROID_HOME must point there too, the profile sets it to the old SDK):
@@ -25,4 +26,4 @@
 - Nothing.
 
 ## Next
-- Francesco tries phase 5 on the tablet: key sounds, music choices, rotation while music plays, leaving and returning, Import music…. Then one Codex audit of phase 5.
+- Francesco's run of the merged APK (tour, dialogs, background, the audio fixes), then one Codex audit.

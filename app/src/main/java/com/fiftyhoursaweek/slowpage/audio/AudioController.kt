@@ -33,6 +33,12 @@ interface AudioOutput {
     /** Opens and starts the stream (blocking: the audio server may be slow); false if it could not. */
     fun start(): Boolean
     fun stop()
+    /**
+     * Whether the stream may be heard (the app is in front); from the main thread, at once and
+     * without blocking. While not, a stream renders silence and is never reopened, so a start
+     * still under way when the app leaves the screen is not heard (Codex phase 5, BLOCKING 1).
+     */
+    fun allow(allowed: Boolean)
 }
 
 /**
@@ -45,9 +51,10 @@ interface AudioOutput {
  *   it closes; the checked track stays checked.
  * - **Idle (A7):** the stream starts on the first sound and stops three seconds after the
  *   mixer goes quiet.
- * - **In the background (A8):** [background] stops the stream (onStop); [foreground] starts it
- *   again if music was playing, where it was. A rotation is neither: the activity skips both,
- *   so the music goes on (Gate A restarted it).
+ * - **In the background (A8):** [background] silences the output at once and stops the
+ *   stream (onStop), also one still opening; [foreground] starts it again if music was
+ *   playing, where it was. A rotation is neither: the activity skips both, so the music goes
+ *   on (Gate A restarted it).
  * - **Threads:** the public calls are for the main thread. The core and the stream are used
  *   only on one audio thread ([lane]), in order: opening a stream can block in the audio
  *   server (Codex phase 3, ANR), and choosing a track opens a file.
@@ -147,13 +154,18 @@ class AudioController internal constructor(
     /** The app is in front again (onStart): music that was playing goes on where it was. */
     fun foreground() {
         foreground = true
+        output.allow(true)
         val music = playingMusic
         lane.execute { if (music != MusicChoice.Off) ensureRunning() }
     }
 
-    /** The app left the screen (onStop, not a rotation): the stream stops (A8). Returns at once. */
+    /**
+     * The app left the screen (onStop, not a rotation): nothing is heard from now on, and the
+     * stream stops (A8). Returns at once, even while the audio thread is opening a stream.
+     */
     fun background() {
         foreground = false
+        output.allow(false)
         lane.execute { stopStream() }
     }
 
@@ -230,6 +242,11 @@ class AudioController internal constructor(
                 }
                 return
             }
+            // The app left the screen while the stream opened: it was never heard, and goes now.
+            if (!foreground) {
+                stopStream()
+                return
+            }
             Log.i(TAG, "audio stream started")
         }
         quiet = 0
@@ -273,7 +290,10 @@ class AudioController internal constructor(
     }
 }
 
-/** The core's `AudioEngine`. The bundled loops are copied out of the APK only when one is first needed (A3). */
+/**
+ * The core's `AudioEngine`. The bundled loops are copied out of the APK only when one is first
+ * played (A3); the picker lists them from the APK (Codex phase 5, MINOR 4).
+ */
 private class CoreMixer(private val context: Context) : Mixer {
     private val engine = AudioEngine(MusicFiles.bundledDir(context).path, MusicFiles.userDir(context).path)
     private var installed = false
@@ -291,13 +311,31 @@ private class CoreMixer(private val context: Context) : Mixer {
     }
     override fun setMusicVolume(volume: Float) = engine.setMusicVolume(volume)
     override fun isActive() = engine.isActive()
-    override fun tracks(): List<MusicChoice> {
-        install()
-        return engine.tracks()
-    }
+    override fun tracks(): List<MusicChoice> =
+        MusicFiles.bundledNames(context).map { MusicChoice.Bundled(it) } + engine.tracks().filterIsInstance<MusicChoice.File>()
 }
 
+/**
+ * The Oboe stream. [allow] comes from the main thread and only sets a flag in the native
+ * player; the library is loaded on the audio thread, by the first [start], and told the flag then.
+ */
 private object NativeOutput : AudioOutput {
-    override fun start() = NativeAudio.start()
+    private var loaded = false
+    private var allowed = true
+
+    override fun start(): Boolean {
+        NativeAudio.load()
+        synchronized(this) {
+            loaded = true
+            NativeAudio.allow(allowed)
+        }
+        return NativeAudio.start()
+    }
+
     override fun stop() = NativeAudio.stop()
+
+    override fun allow(allowed: Boolean) = synchronized(this) {
+        this.allowed = allowed
+        if (loaded) NativeAudio.allow(allowed)
+    }
 }

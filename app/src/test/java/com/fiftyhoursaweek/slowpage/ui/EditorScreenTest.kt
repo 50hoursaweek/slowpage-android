@@ -55,7 +55,7 @@ class EditorScreenTest {
             override fun <T : ViewModel> create(modelClass: Class<T>): T = ShellViewModel(app, SavedStateHandle()) as T
         }
         vm = ViewModelProvider(store, factory)[ShellViewModel::class.java]
-        until("ready") { vm.preferences.size > 0 }
+        until("ready") { vm.loaded }
         vm.newDocument()
         until("a document opens") { vm.screen is Screen.Editor && vm.highlight != null }
         vm.accept("# Heading\n\nSome text with a [link](https://example.com).")

@@ -31,7 +31,7 @@ import com.fiftyhoursaweek.slowpage.store.DocumentEntry
 import java.text.DateFormat
 import java.util.Date
 
-/** New, Import…, Settings; the recent list; every document in app storage (D10). */
+/** New and Import…; the recent list; every document in app storage (D10). The iPad's start screen has no settings either: they are in the editor's menu. */
 @Composable
 fun StartScreen(
     documents: List<DocumentEntry>,
@@ -39,7 +39,6 @@ fun StartScreen(
     problems: List<String>,
     onNew: () -> Unit,
     onImport: () -> Unit,
-    onSettings: () -> Unit,
     onOpen: (String) -> Unit,
     onExport: (String) -> Unit,
     onDelete: (String) -> Unit,
@@ -52,7 +51,6 @@ fun StartScreen(
                 Row(Modifier.padding(vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = onNew) { Text("New") }
                     OutlinedButton(onClick = onImport) { Text("Import…") }
-                    OutlinedButton(onClick = onSettings) { Text("Settings") }
                 }
                 for (line in problems) {
                     Text(line, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp))

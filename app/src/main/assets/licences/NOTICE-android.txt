@@ -1,0 +1,27 @@
+Slowpage for Android: the libraries in this build beyond the core
+
+Everything the iPad app credits is here too: the same core (hushhour-core and the
+Rust crates in "All Rust crates in the core", bridged with UniFFI and decoding audio with
+Symphonia), the same fonts, typing sounds and music. The Android build adds the
+following, each used unmodified.
+
+Oboe (Google), the audio output stream
+  Apache License 2.0 ("Apache License 2.0" in this list)
+  https://github.com/google/oboe
+
+Java Native Access (JNA), which loads the core
+  Apache License 2.0 or LGPL 2.1 or later, at the user's choice; used here under the
+  Apache License 2.0
+  https://github.com/java-native-access/jna
+
+Kotlin standard library and kotlinx.coroutines (JetBrains)
+  Apache License 2.0
+  https://github.com/JetBrains/kotlin, https://github.com/Kotlin/kotlinx.coroutines
+
+AndroidX: Jetpack Compose, Activity, Lifecycle, RecyclerView, Annotation (Google)
+  Apache License 2.0
+  https://android.googlesource.com/platform/frameworks/support
+
+LLVM libc++ (libc++_shared.so, from the Android NDK), the C++ library of the audio code
+  Apache License 2.0 with LLVM Exceptions ("LLVM libc++" in this list)
+  https://github.com/llvm/llvm-project

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ContentResolver
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
@@ -59,11 +60,16 @@ import java.io.IOException
 sealed interface Screen {
     data object Start : Screen
     data class Editor(val name: String) : Screen
-    data object Settings : Screen
 }
 
+/** The dialogs of the iPad and Linux apps (O5), from the editor's menu. */
+enum class Dialog { APPEARANCE, SOUND, ABOUT }
+
+/** How the welcome tour ends (O1): Skip or Start writing, or New document or Import… on its last card over the start screen. */
+enum class TourExit { CLOSE, NEW_DOCUMENT, IMPORT }
+
 /**
- * The shell: start screen, the open document, settings. Store work runs on one IO lane, in
+ * The shell: start screen, the open document, the dialogs and the welcome tour. Store work runs on one IO lane, in
  * order; state is read and written on the main thread. Survives rotation; after process death
  * the open document is reopened from [SavedStateHandle] (its text is on disk by onStop).
  */
@@ -88,10 +94,31 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     var notice by mutableStateOf<String?>(null)
     var preferences by mutableStateOf(defaultPreferences())
         private set
+    /** True once the preferences are read (and the first-launch tour decided). */
+    var loaded by mutableStateOf(false)
+        private set
     /** Typing sounds and music (phase 5), the process's. */
     private val audio get() = app.audio
     /** What the music picker offers: Off, the bundled loops, the soundscapes, the user's tracks (A3). */
     var musicChoices by mutableStateOf(listOf<MusicChoice>(MusicChoice.Off))
+        private set
+    /** The dialog up (O5), or null; kept across rotation. */
+    var dialog by mutableStateOf<Dialog?>(null)
+        private set
+    /**
+     * Whether the welcome tour is up (O1), and over what: true over the start screen (its last
+     * card offers New document and Import…), false over a document (Start writing). Null when not.
+     */
+    var tourOffersStart by mutableStateOf<Boolean?>(null)
+        private set
+    /** The tour's card, kept across rotation. */
+    var tourCard by mutableStateOf(0)
+    /** The track whose sample is playing in the tour (▷ becomes ■), or null. */
+    var sample by mutableStateOf<MusicChoice?>(null)
+        private set
+    private var tourFinished = false
+    /** When the text last changed (SystemClock.uptimeMillis): the background pattern rests while typing. */
+    @Volatile var lastEditAt = 0L
         private set
 
     // The open document.
@@ -186,11 +213,19 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
                     ?: defaultPreferences()
             }
             // The music is never saved (A4): it starts Off whatever the file says.
-            audio.onProblem = { notice = it }
+            audio.onProblem = reportAudio
+            audio.onSampleChange = sampleChanged
             audio.preferencesChanged(preferences)
             refreshMusicChoices()
             refresh()
-            saved.get<String>(OPEN_KEY)?.let { open(it, restoring = true) }
+            val reopen = saved.get<String>(OPEN_KEY)
+            // First launch: the welcome tour, once (Francesco, 2026-10-14). The flag is claimed
+            // when it shows, so a later launch never shows it again.
+            if (preferences.showWelcome && reopen == null && showWelcome()) {
+                updatePreferences(preferences.copy(showWelcome = false))
+            }
+            loaded = true
+            reopen?.let { open(it, restoring = true) }
         }
         viewModelScope.launch(io) { MusicFiles.removeLeftovers(app) }
     }
@@ -375,10 +410,6 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         }
     }
 
-    fun openSettings() {
-        if (session == null) screen = Screen.Settings
-    }
-
     // ---- Editor
 
     fun attach(editor: EditorSink) {
@@ -424,6 +455,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             afterChange(s)
             // One key sound per change, as on Linux and the iPad (A2): Enter, Backspace, or a
             // character (paste too).
+            lastEditAt = SystemClock.uptimeMillis()
             audio.playKey(if (insert == "\n") KeyKind.ENTER else if (insert.isEmpty()) KeyKind.BACKSPACE else KeyKind.CHARACTER)
             return edited
         }
@@ -743,7 +775,74 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         }
     }
 
-    // ---- Sound (phase 5; the full Sound and music dialog is phase 6)
+    /** The line height in steps of 0.05 within the core's limits, as the iPad's slider sets it. */
+    fun setLineHeight(value: Float) {
+        val l = limits()
+        val rounded = (Math.round(value * 20) / 20f).coerceIn(l.minLineHeight, l.maxLineHeight)
+        if (rounded != preferences.lineHeight) updatePreferences(preferences.copy(lineHeight = rounded))
+    }
+
+    // ---- Dialogs and the welcome tour (phase 6, O1-O5)
+
+    /** Open [which] over the current screen; not over another dialog or the tour. */
+    fun showDialog(which: Dialog) {
+        if (dialog != null || tourOffersStart != null) return
+        menuOpen = false
+        // The picker lists what is there now, a track imported elsewhere included.
+        if (which == Dialog.SOUND) refreshMusicChoices()
+        dialog = which
+    }
+
+    fun closeDialog() {
+        dialog = null
+    }
+
+    /**
+     * The welcome tour, over the start screen (with New document and Import… on its last card)
+     * or over the open document. A track checked in the tour stays silent until a document is
+     * opened, also when the tour is over one; music already playing goes on (A6). False when
+     * something else is up.
+     */
+    fun showWelcome(card: Int = 0): Boolean {
+        if (dialog != null || tourOffersStart != null) return false
+        menuOpen = false
+        audio.holdMusic()
+        refreshMusicChoices()
+        tourFinished = false
+        tourCard = card.coerceIn(0, TOUR_CARDS - 1)
+        tourOffersStart = session == null
+        return true
+    }
+
+    /** About → Welcome…: the dialog closes and the tour opens over the document. */
+    fun welcomeFromAbout() {
+        dialog = null
+        showWelcome()
+    }
+
+    /**
+     * End the tour, once: a second tap on New document makes no second document (O1). True when
+     * this call ended it; the activity then starts Import… for [TourExit.IMPORT].
+     */
+    fun finishTour(exit: TourExit): Boolean {
+        if (tourOffersStart == null || tourFinished) return false
+        val overStart = tourOffersStart == true
+        tourFinished = true
+        tourOffersStart = null
+        audio.stopSample()
+        if (exit == TourExit.NEW_DOCUMENT && overStart && session == null) newDocument()
+        return exit != TourExit.IMPORT || overStart
+    }
+
+    /** ▷ in the tour: a short sample of [choice], alone; ■ or leaving the card stops it. */
+    fun playSample(choice: MusicChoice) = audio.playSample(choice)
+
+    fun stopSample() = audio.stopSample()
+
+    /** A key in the tour's box on the Sound card. */
+    fun tourKey(kind: KeyKind) = audio.playKey(kind)
+
+    // ---- Sound
 
     /** Check [choice]; it plays while a document is open (A5). */
     fun setMusic(choice: MusicChoice) = updatePreferences(preferences.copy(music = choice))
@@ -770,10 +869,9 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
 
     // ---- Navigation
 
-    /** System back: editor → close, settings → start. False on the start screen (the activity finishes). */
+    /** System back: editor → close. False on the start screen (the activity finishes). */
     fun back(): Boolean = when (screen) {
         is Screen.Editor -> { closeEditor(); true }
-        Screen.Settings -> { screen = Screen.Start; true }
         Screen.Start -> false
     }
 
@@ -783,7 +881,20 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         refresh()
     }
 
+    /** Sound problems and samples for this view model; dropped from the process's controller in [onCleared]. */
+    private val reportAudio: (String) -> Unit = { notice = it }
+    private val sampleChanged: (MusicChoice?) -> Unit = { sample = it }
+
     override fun onCleared() {
+        // The task is gone but the process may stay (Codex phase 5, BLOCKING 2 and MINOR 5): no
+        // track is left playing for the next window to start before any document opens, and the
+        // controller keeps nothing of this view model.
+        audio.silenceUntilDocument()
+        if (audio.onProblem === reportAudio) audio.onProblem = null
+        if (audio.onSampleChange === sampleChanged) {
+            audio.stopSample()
+            audio.onSampleChange = null
+        }
         session?.let {
             // The task is closing: a failed save leaves the recovery copy behind.
             keepFiles(it, it.save())
@@ -829,5 +940,6 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         private const val PREVIEW_DELAY_MS = 150L
         private const val HINT_MS = 2500L
         private const val TAG = "SlowpageShell"
+        const val TOUR_CARDS = 5
     }
 }

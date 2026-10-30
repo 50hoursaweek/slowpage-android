@@ -44,20 +44,35 @@ class AudioControllerTest {
         fun keys() = synchronized(calls) { calls.filter { it.startsWith("key") } }
     }
 
+    /** As the native player: while not allowed, a started stream renders silence. */
     class FakeOutput(@Volatile var openMillis: Long = 0, @Volatile var works: Boolean = true) : AudioOutput {
         val calls = mutableListOf<String>()
         val threads = mutableSetOf<String>()
+        /** Everything in order, the main thread's allow calls too. */
+        val events = mutableListOf<String>()
+        @Volatile var allowed = true
+        @Volatile var running = false
         override fun start(): Boolean {
             threads += Thread.currentThread().name
+            synchronized(calls) { events += "opening" }
             Thread.sleep(openMillis)
-            synchronized(calls) { calls += "start" }
+            synchronized(calls) { calls += "start"; events += "start" }
+            running = works
             return works
         }
         override fun stop() {
             threads += Thread.currentThread().name
-            synchronized(calls) { calls += "stop" }
+            running = false
+            synchronized(calls) { calls += "stop"; events += "stop" }
         }
+        override fun allow(allowed: Boolean) {
+            this.allowed = allowed
+            synchronized(calls) { events += "allow $allowed" }
+        }
+        /** Whether anything could be heard now. */
+        val audible get() = running && allowed
         fun all() = synchronized(calls) { calls.toList() }
+        fun log() = synchronized(calls) { events.toList() }
     }
 
     @After fun tearDown() {
@@ -175,10 +190,32 @@ class AudioControllerTest {
         audio.background()  // onStop must not wait for it
         val took = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - began)
         assertTrue("the calls took $took ms", took < 500)
+        // Codex phase 5, BLOCKING 1: the output is silenced at once, before the open ends.
+        assertEquals(listOf("opening", "allow false"), output.log())
         drain()
-        assertEquals("the stop still comes after the open", listOf("start", "stop"), output.all())
+        assertEquals("the stream that opened late is stopped", listOf("opening", "allow false", "start", "stop"), output.log())
+        assertFalse(output.audible)
         assertEquals(setOf("audio-test"), mixer.threads)
         assertEquals(setOf("audio-test"), output.threads)
+    }
+
+    @Test fun aStreamThatFinishesOpeningAfterOnStopIsNeverHeardAndComingBackStartsItAgain() {
+        // Codex phase 5, BLOCKING 1, with nothing queued after it: the check after the open stops it.
+        output.openMillis = 300
+        audio.preferencesChanged(defaultPreferences())
+        audio.playKey(KeyKind.CHARACTER)
+        until("the open is under way") { output.log() == listOf("opening") }
+        audio.background()
+        until("it is stopped") { output.all() == listOf("start", "stop") }
+        assertFalse(output.audible)
+        Thread.sleep(100)
+        drain()
+        assertEquals("and stays stopped", listOf("start", "stop"), output.all())
+        audio.foreground()
+        audio.playKey(KeyKind.CHARACTER)
+        drain()
+        assertEquals(listOf("start", "stop", "start"), output.all())
+        assertTrue(output.audible)
     }
 
     @Test fun noAudioOutputIsReportedOnce() {

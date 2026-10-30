@@ -2,7 +2,7 @@
 # Gate A: build hushhour-ipad (inkpad-ipados/HushHourCore) for arm64-v8a and generate its
 # Kotlin bindings. The crate is consumed at a pinned revision, never edited here.
 # Output (not committed): rust-out/jniLibs/arm64-v8a/libhushhour_ipad.so, rust-out/kotlin/,
-# rust-out/assets/music/, rust-out/assets/fonts/, rust-out/host/libhushhour_ipad.dylib (for JVM unit tests).
+# rust-out/assets/music/, rust-out/assets/fonts/, rust-out/assets/licences/, rust-out/assets/about/, rust-out/host/libhushhour_ipad.dylib (for JVM unit tests).
 set -eu
 
 REV=873d4f4c74ea22a52658494f2697e86c3a146ddf   # inkpad-ipados: "add cdylib crate type"
@@ -51,8 +51,18 @@ cp "$WORK/HushHour/HushHour/Resources/Music/"*.ogg "$OUT/assets/music/"
 rm -rf "$OUT/assets/fonts"
 mkdir -p "$OUT/assets/fonts"
 for f in "$WORK/HushHour/HushHour/Resources/Fonts/"IBMPlex*.ttf "$WORK/HushHour/HushHour/Resources/Fonts/"Literata-*.ttf \
-         "$WORK/HushHour/HushHour/Resources/Fonts/"LICENSE-IBM-Plex-*.txt "$WORK/HushHour/HushHour/Resources/Fonts/"LICENSE-Literata.txt; do
+         "$WORK/HushHour/HushHour/Resources/Fonts/"LICENSE-IBM-Plex-*.txt "$WORK/HushHour/HushHour/Resources/Fonts/"LICENSE-Literata.txt \
+         "$WORK/HushHour/HushHour/Resources/Fonts/"Lato-Regular.ttf "$WORK/HushHour/HushHour/Resources/Fonts/"LICENSE-Lato.md; do
     cp "$f" "$OUT/assets/fonts/"
 done
+
+# Phase 6: About's licence texts and icon, as shipped in the iPad bundle at $REV (Lato above is
+# the dialogs' face). The Android-only notices are in app/src/main/assets/licences.
+rm -rf "$OUT/assets/licences" "$OUT/assets/about"
+mkdir -p "$OUT/assets/licences" "$OUT/assets/about"
+for f in LICENSE-Slowpage.txt LICENSE-hushhour-core.txt LICENSE-sounds.md LICENSE-MPL-2.0.txt LICENSES-rust.txt; do
+    cp "$WORK/HushHour/HushHour/Resources/Licences/$f" "$OUT/assets/licences/"
+done
+cp "$WORK/HushHour/HushHour/Resources/Assets.xcassets/Icon.imageset/"Icon-*.png "$OUT/assets/about/"
 
 find "$OUT" -type f | sed "s|$ROOT/||" | sort

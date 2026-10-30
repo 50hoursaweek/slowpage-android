@@ -2,14 +2,18 @@
 // plain C export (`hushhour_mixer_render`, inkpad-ipados HushHourCore/src/ffi.rs), outside
 // UniFFI, in chunks the mixer renders without allocating. The mixer runs at 44.1 kHz stereo
 // float; Oboe resamples to the device rate. When it runs is decided in Kotlin
-// (`audio/AudioController.kt`); started and stopped only on the audio thread there.
+// (`audio/AudioController.kt`); started and stopped only on the audio thread there. `allow`
+// comes from the main thread when the app leaves or returns to the screen: it only sets a
+// flag, so a start still opening when the app leaves is never heard (Codex phase 5, BLOCKING 1).
 
 #include <jni.h>
 #include <android/log.h>
 #include <oboe/Oboe.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <mutex>
 
@@ -26,11 +30,15 @@ constexpr int32_t kMaxBlock = 4096;
 
 class Player : public oboe::AudioStreamDataCallback, public oboe::AudioStreamErrorCallback {
 public:
+    // While not allowed nothing opens; true all the same (not a failure): the caller stops it.
     bool start() {
         std::lock_guard<std::mutex> lock(mutex_);
         wanted_ = true;
+        if (!allowed_.load()) return true;
         return openAndStart();
     }
+
+    void allow(bool allowed) { allowed_.store(allowed); }
 
     void stop() {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -45,6 +53,11 @@ public:
 
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream *, void *data, int32_t frames) override {
         auto *out = static_cast<float *>(data);
+        // Not heard while the app is away; the mixer is not pulled, so the music waits where it was.
+        if (!allowed_.load(std::memory_order_relaxed)) {
+            std::memset(out, 0, sizeof(float) * kChannels * static_cast<size_t>(frames));
+            return oboe::DataCallbackResult::Continue;
+        }
         for (int32_t done = 0; done < frames;) {
             const int32_t n = std::min(frames - done, kMaxBlock);
             hushhour_mixer_render(out + done * kChannels, static_cast<uint32_t>(n));
@@ -59,7 +72,7 @@ public:
         __android_log_print(ANDROID_LOG_WARN, kTag, "stream closed: %s", oboe::convertToText(error));
         std::lock_guard<std::mutex> lock(mutex_);
         stream_.reset();
-        if (wanted_) openAndStart();
+        if (wanted_ && allowed_.load()) openAndStart();
     }
 
 private:
@@ -105,6 +118,7 @@ private:
     std::mutex mutex_;
     std::shared_ptr<oboe::AudioStream> stream_;
     bool wanted_ = false;
+    std::atomic<bool> allowed_{true};
 };
 
 Player player;
@@ -119,4 +133,9 @@ Java_com_fiftyhoursaweek_slowpage_NativeAudio_start(JNIEnv *, jobject) {
 extern "C" JNIEXPORT void JNICALL
 Java_com_fiftyhoursaweek_slowpage_NativeAudio_stop(JNIEnv *, jobject) {
     player.stop();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_fiftyhoursaweek_slowpage_NativeAudio_allow(JNIEnv *, jobject, jboolean allowed) {
+    player.allow(allowed == JNI_TRUE);
 }
