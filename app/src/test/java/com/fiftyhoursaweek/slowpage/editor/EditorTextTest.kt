@@ -2,6 +2,7 @@ package com.fiftyhoursaweek.slowpage.editor
 
 import android.os.Looper
 import android.view.LayoutInflater
+import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -17,6 +18,7 @@ import com.fiftyhoursaweek.slowpage.ShellViewModel
 import com.fiftyhoursaweek.slowpage.SlowpageApp
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -28,8 +30,11 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import uniffi.hushhour.ByteRange
 import uniffi.hushhour.FocusMode
 import uniffi.hushhour.FontChoice
+import uniffi.hushhour.Position
+import uniffi.hushhour.TextChange
 import uniffi.hushhour.Theme
 import java.time.Duration
 
@@ -188,19 +193,61 @@ class EditorTextTest {
         assertTrue(editor.loading)
         assertTrue("only the first piece", editor.text.length < long.length)
         assertEquals("the first piece ends at a line break", '\n', editor.text[editor.text.length - 1])
-        ic.commitText("refused", 1)  // no input until it is all in
+        assertTrue("no input until it is all in", vm.editorBusy)
+        ic.commitText("refused", 1)
         until("all in") { !editor.loading && ready }
+        assertTrue(!vm.editorBusy)
         assertEquals(long, editor.text.toString())
         assertEquals(5, editor.selectionEnd)
         inStep()
         ic.commitText("x", 1)
         assertEquals(long.substring(0, 5) + "x" + long.substring(5), vm.editorText())
         inStep()
-        // An undo during a load gets the whole text first.
+        // Round 2: undo waits while a text goes in, rather than putting the rest in at once.
         editor.load(vm.editorText(), 0, 0)
         assertTrue(editor.loading)
         vm.command(Command.UNDO)
-        assertTrue(!editor.loading)
+        assertTrue("still going in, a piece at a time", editor.loading)
+        until("all in") { !editor.loading }
+        assertEquals("nothing undone", long.substring(0, 5) + "x" + long.substring(5), vm.editorText())
+        inStep()
+        // A change from the core that comes anyway starts the core's text again, still in pieces.
+        editor.load(vm.editorText(), 0, 0)
+        editor.apply(TextChange(ByteRange(0u, 0u), ByteRange(0u, 0u), "", Position(0u, 0u), 0u, 0u, 0u, 0u))
+        assertTrue(editor.loading)
+        until("all in") { !editor.loading }
+        inStep()
+    }
+
+    @Test fun typingDuringALayoutAgainIsPausedVisiblyAndNeverLost() {
+        // Round 2, BLOCKING: a focused editor laid out again (Split, zoom, a font) took keys
+        // while its text went back in, and dropped them.
+        val line = "Prose typed into while it is laid out again.\n"
+        val long = line.repeat(2 * 256 * 1024 / line.length + 3)
+        assertTrue(vm.accept(long))
+        editor.load(vm.editorText(), 10, 10)
+        until("all in") { !editor.loading }
+        editor.requestFocus()
+        assertTrue(editor.hasFocus())
+        editor.setLook(Look(Theme.LIGHT, FontChoice.SERIF, 36f, 1.5f), 100, 40)  // a font: laid out again
+        assertTrue(editor.loading)
+        assertTrue("the screen says input waits", vm.editorBusy)
+        assertNull("the keyboard is disconnected", editor.onCreateInputConnection(EditorInfo()))
+        assertTrue("the focus stays (a button with it would take a hardware Enter)", editor.hasFocus())
+        // Whatever a keyboard still sends changes neither the view nor the core.
+        ic.commitText("lost?", 1)
+        for (code in listOf(KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_TAB)) {
+            assertTrue(editor.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code)))
+            editor.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+        }
+        assertEquals(long, vm.editorText())
+        assertTrue(editor.hasFocus())
+        until("all in") { !editor.loading }
+        assertTrue("input is back, with the focus", editor.hasFocus() && !vm.editorBusy)
+        assertEquals(10, editor.selectionEnd)
+        ic = editor.onCreateInputConnection(EditorInfo())!!
+        ic.commitText("typed", 1)
+        assertEquals(long.substring(0, 10) + "typed" + long.substring(10), vm.editorText())
         inStep()
     }
 

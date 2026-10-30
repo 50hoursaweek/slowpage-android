@@ -13,6 +13,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -24,6 +25,7 @@ import org.robolectric.Shadows.shadowOf
 import com.fiftyhoursaweek.slowpage.store.Recovery
 import com.fiftyhoursaweek.slowpage.editor.Command
 import com.fiftyhoursaweek.slowpage.editor.LineTable
+import com.fiftyhoursaweek.slowpage.editor.Paragraphs
 import com.fiftyhoursaweek.slowpage.preview.PreviewLook
 import uniffi.hushhour.FontChoice
 import uniffi.hushhour.Theme
@@ -178,7 +180,8 @@ class ShellViewModelTest {
         val handle = SavedStateHandle()
         val vm = create(handle)
         val name = openNew(vm)
-        val big = (1..40_000).joinToString(" ") { "word$it" }  // about 390,000 characters
+        // About 390,000 characters, in paragraphs (one that long is over the paragraph cap).
+        val big = (1..40_000).joinToString(" ") { if (it % 1000 == 0) "word$it\n" else "word$it" }
         assertTrue(vm.accept(big))
         app.recovery.folder.mkdirs()
         writable(app.store.folder, false)
@@ -288,7 +291,7 @@ class ShellViewModelTest {
     @Test fun aChangePastTheLimitIsRefusedWithANotice() {
         val vm = create(SavedStateHandle())
         openNew(vm)
-        val big = "a".repeat(20 * 1024 * 1024)
+        val big = ("a".repeat(1023) + "\n").repeat(20 * 1024)
         assertTrue(vm.accept(big))
         assertFalse(vm.host.fits(big.length, big.length, "b"))
         assertTrue(vm.notice!!.contains("20 MiB"))
@@ -392,6 +395,53 @@ class ShellViewModelTest {
             settle()  // well past the pause
         }
         assertEquals(Screen.Start, vm.screen)
+    }
+
+    @Test fun aDocumentWithAParagraphOverTheCapOpensReadOnlyAndIsNeverChanged() {
+        // Round 2, ruling B: a paragraph over the cap could not be edited smoothly.
+        val vm = create(SavedStateHandle())
+        settle()
+        val over = "word ".repeat(Paragraphs.CAP / 5) + "x"
+        val text = "# Title\n\n$over\nlast line\n"
+        app.store.write("Long.md", text)
+        vm.open("Long.md")
+        until("it opens") { vm.screen is Screen.Editor }
+        val shown = vm.readOnly!!
+        assertEquals("shown whole", text, shown.text)
+        assertNull("no editor", vm.highlight)
+        assertFalse("nothing typed goes in", vm.accept(text + "more"))
+        assertFalse(vm.host.fits(0, 0, "a"))
+        vm.command(Command.UNDO)
+        vm.setView(ViewMode.SPLIT)
+        assertEquals("no preview to switch to", ViewMode.EDITOR, vm.viewMode)
+        vm.closeEditor()
+        until("closed") { vm.screen == Screen.Start }
+        assertEquals("never changed", text, app.store.read("Long.md"))
+        assertNull(vm.readOnly)
+        // At the cap it is an ordinary document.
+        app.store.write("AtCap.md", "a".repeat(Paragraphs.CAP))
+        vm.open("AtCap.md")
+        until("it opens") { vm.highlight != null }
+        assertNull(vm.readOnly)
+    }
+
+    @Test fun anEditThatWouldMakeAParagraphOverTheCapIsRefusedWithANotice() {
+        val vm = create(SavedStateHandle())
+        openNew(vm)
+        val half = "b".repeat(Paragraphs.CAP / 2)
+        assertTrue(vm.accept("$half\n$half"))
+        // Typing up to the cap is fine; one more character is not.
+        assertTrue(vm.accept("$half\n$half" + "c".repeat(Paragraphs.CAP / 2)))
+        val full = vm.editorText()
+        assertFalse(vm.host.fits(full.length, full.length, "d"))
+        assertTrue(vm.notice!!.contains("paragraph"))
+        // Joining two paragraphs past it (deleting the line break) is refused too.
+        assertFalse(vm.host.fits(half.length, half.length + 1, ""))
+        // A paste that brings one over the cap, even between line breaks.
+        assertFalse(vm.host.fits(0, 0, "x\n" + "y".repeat(Paragraphs.CAP + 1) + "\nz"))
+        assertTrue("a paste of ordinary paragraphs", vm.host.fits(0, 0, "x\n" + "y".repeat(1000) + "\n"))
+        assertTrue("deleting within the long one", vm.host.fits(full.length - 1, full.length, ""))
+        assertEquals(full, vm.editorText())
     }
 
     // ---- helpers

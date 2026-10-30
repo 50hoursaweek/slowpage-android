@@ -20,11 +20,15 @@ import android.util.AttributeSet
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.ScrollView
 import com.fiftyhoursaweek.slowpage.ui.Colours
 import com.fiftyhoursaweek.slowpage.ui.Faces
+import com.fiftyhoursaweek.slowpage.ui.focusEditor
 import uniffi.hushhour.FontChoice
 import uniffi.hushhour.SpanKind
 import uniffi.hushhour.TextChange
@@ -55,6 +59,8 @@ interface EditorHost {
     fun redo()
     /** The core's text, to start again from when the editor finds itself out of step. */
     fun coreText(): String
+    /** A long text started or finished going in ([EditorText.load]): input waits meanwhile, and the writer is told why. */
+    fun loadingChanged(loading: Boolean)
 }
 
 /** What the editor does for its owner: apply the core's changes, redraw the spotlight. */
@@ -164,23 +170,23 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
     }
 
     fun unbind() {
-        host = null
-        model = null
         removeCallbacks(nextPiece)
         loadingText = null
         loaded = null
+        resume(refocus = false)
+        host = null
+        model = null
     }
 
     // ---- Text from the core
 
-    /** Show [text] (the core's, after open or a reload); the caret at [selStart]..[selEnd]. */
     /**
      * Show [text] (the core's, after open or a reload); the caret at [selStart]..[selEnd], then
      * [then] (posted). A long text goes in a piece at a time, each ending at a line break, one
      * piece per pass of the main loop (round 1, F3 and BLOCKING 3): the platform lays out a
      * whole text at once with an object per paragraph, which ran a 19 MiB document out of
      * memory and held the main thread past the ANR limit. Until the last piece is in, the
-     * editor takes no input ([loading]); highlighting and the caret come with the last piece.
+     * editor takes no input ([pause]); highlighting and the caret come with the last piece.
      */
     fun load(text: String, selStart: Int, selEnd: Int, then: (() -> Unit)? = null) {
         removeCallbacks(nextPiece)
@@ -198,7 +204,12 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
         loadedTo = first
         loadSelection = selStart to selEnd
         loaded = then
-        if (loadingText != null) post(nextPiece) else finishLoad()
+        if (loadingText != null) {
+            pause()
+            post(nextPiece)
+        } else {
+            finishLoad()
+        }
     }
 
     /** Whether a long text is still going in ([load]); the editor refuses input until it is. */
@@ -229,19 +240,57 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
         if (end >= text.length) loadingText = null
     }
 
-    /** All of a text still going in, now: a change from the core needs the whole text. */
-    private fun finishLoading() {
-        if (loadingText == null) return
-        removeCallbacks(nextPiece)
-        while (loadingText != null) appendPiece()
-        finishLoad()
+    /** Whether input is paused while a text goes in, and whether the editor had the keyboard then. */
+    private var paused = false
+    private var hadFocus = false
+
+    /**
+     * No input while a text goes in (round 2, BLOCKING): the gate would refuse it silently. The
+     * soft keyboard is disconnected ([onCreateInputConnection]) and keys are swallowed
+     * ([onKeyDown]), and the host shows why until [resume]. The keyboard stays on screen: hidden,
+     * it went and came back within a second on a 5 MB document, resizing the page twice. The
+     * editor keeps the focus: disabled, it passed the focus to the next button, where a
+     * hardware Space or Enter would press it.
+     */
+    private fun pause() {
+        if (paused) return
+        paused = true
+        hadFocus = hasFocus()
+        showSoftInputOnFocus = false
+        imm().restartInput(this)
+        host?.loadingChanged(true)
     }
+
+    /** Input again; the keyboard is connected again, and shown if the editor had the focus ([refocus]). */
+    private fun resume(refocus: Boolean = true) {
+        if (!paused) return
+        paused = false
+        showSoftInputOnFocus = true
+        imm().restartInput(this)
+        host?.loadingChanged(false)
+        if (refocus && hadFocus) focusEditor(this)
+        hadFocus = false
+    }
+
+    private fun imm() = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+
+    /** No keyboard connection while input is paused ([pause]). */
+    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? =
+        if (paused) null else super.onCreateInputConnection(outAttrs)
+
+    // Keys wait too, all but Back (the shortcuts are the activity's, before any view).
+    private fun waits(event: KeyEvent) = paused && event.keyCode != KeyEvent.KEYCODE_BACK && event.keyCode != KeyEvent.KEYCODE_ESCAPE
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent) = waits(event) || super.onKeyDown(keyCode, event)
+    override fun onKeyUp(keyCode: Int, event: KeyEvent) = waits(event) || super.onKeyUp(keyCode, event)
+    override fun onKeyMultiple(keyCode: Int, repeatCount: Int, event: KeyEvent) = waits(event) || super.onKeyMultiple(keyCode, repeatCount, event)
 
     private fun finishLoad() {
         val length = editableText.length
         resetDrawn(model?.lines?.lineCount ?: 1)
         val (a, b) = loadSelection
         setSelection(a.coerceIn(0, length), b.coerceIn(0, length))
+        resume()
         val then = loaded
         loaded = null
         post {
@@ -253,8 +302,10 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
     /** The end of the piece of [text] from [start]: about [PIECE] units, just after a line break (or the end). */
     private fun pieceEnd(text: String, start: Int): Int {
         if (text.length - start <= PIECE) return text.length
-        // A paragraph laid out across two pieces would be laid out again from its start.
-        val back = text.lastIndexOf('\n', start + PIECE)
+        // A paragraph laid out across two pieces would be laid out again from its start. The
+        // search back stops at the piece's start (a long line would be searched to the text's).
+        var back = start + PIECE
+        while (back >= start && text[back] != '\n') back--
         if (back >= start) return back + 1
         val forward = text.indexOf('\n', start + PIECE)
         return if (forward < 0) text.length else forward + 1
@@ -262,10 +313,19 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
 
     /** Apply a change the core made (undo, redo): the text, the line table, the caret. */
     override fun apply(change: TextChange) {
-        finishLoading()
         val e = editableText ?: return
         val start = change.utf16.start.toInt()
         val end = change.utf16.end.toInt()
+        if (loading) {
+            // Not expected: undo and redo wait while a text goes in (the host holds them). The
+            // core's text goes in again from the start, a piece at a time, instead of the rest
+            // of the old one at once on the main thread (round 2).
+            val h = host ?: return
+            val text = h.coreText()
+            model?.didEdit(text, start, end, change.text.length, change.line.toInt(), change.removedLines.toInt(), change.insertedLines.toInt())
+            load(text, change.caretUtf16.toInt(), change.caretUtf16.toInt(), loaded)
+            return
+        }
         if (start < 0 || end < start || end > e.length) {
             // Never expected: the view and the core disagree. Show the core's text rather than crash.
             Log.e(TAG, "a change from the core does not fit the editor ($start..$end of ${e.length}); reloading")
@@ -514,8 +574,10 @@ class EditorText(context: Context, attrs: AttributeSet? = null) : EditText(conte
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        updatePadding()
-        post { drawVisible(); anchor() }
+        // Posted: this runs inside the page's layout, where a change to the page's padding is
+        // dropped (round 2: the keyboard coming back while a text went in left the anchor's
+        // space of the taller page, and the text below the screen).
+        post { updatePadding(); drawVisible(); anchor() }
     }
 
     override fun onScrollChanged(horiz: Int, vert: Int, oldHoriz: Int, oldVert: Int) {

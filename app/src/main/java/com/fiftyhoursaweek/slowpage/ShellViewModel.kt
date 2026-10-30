@@ -19,6 +19,8 @@ import com.fiftyhoursaweek.slowpage.editor.EditorSession
 import com.fiftyhoursaweek.slowpage.editor.EditorSink
 import com.fiftyhoursaweek.slowpage.editor.Edited
 import com.fiftyhoursaweek.slowpage.editor.HighlightModel
+import com.fiftyhoursaweek.slowpage.editor.Paragraphs
+import com.fiftyhoursaweek.slowpage.editor.ReadOnlyText
 import com.fiftyhoursaweek.slowpage.editor.diff
 import com.fiftyhoursaweek.slowpage.preview.PreviewLook
 import com.fiftyhoursaweek.slowpage.preview.PreviewRenderer
@@ -144,6 +146,15 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     /** Read-only while a close is writing the text (D4); editable again if the close fails. */
     var closing by mutableStateOf(false)
         private set
+    /** A long text is going into the editor: input, undo and redo wait, and the screen says so (round 2). */
+    var editorBusy by mutableStateOf(false)
+        private set
+    /**
+     * The open document when its longest paragraph is over [Paragraphs.CAP] (ruling B): shown
+     * read-only, never changed; there is no editor and no preview. Null for any other document.
+     */
+    var readOnly by mutableStateOf<ReadOnlyText?>(null)
+        private set
 
     private var saveJob: Job? = null
     /** Only the latest Open or New replaces the screen (D5: an older one finishing last is dropped). */
@@ -237,10 +248,18 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
                         withContext(io) { recovery.clear(name) }
                     }
                     val font = preferences.font
-                    // Off the main thread: a 20 MiB copy out of the core (round 1, F3).
-                    val (text, model) = withContext(io) { s.text.let { it to HighlightModel(font).apply { reset(it) } } }
-                    highlight = model
-                    openedText = text to s.revision()
+                    // Off the main thread: a 20 MiB copy out of the core (round 1, F3). Over the
+                    // paragraph cap, the text is only shown (ruling B): nothing to highlight.
+                    val (text, model) = withContext(io) {
+                        val t = s.text
+                        if (Paragraphs.longest(t) > Paragraphs.CAP) t to null else t to HighlightModel(font).apply { reset(t) }
+                    }
+                    if (model == null) {
+                        readOnly = withContext(io) { ReadOnlyText(text) }
+                    } else {
+                        highlight = model
+                        openedText = text to s.revision()
+                    }
                     selectionStart = caret?.getInt(START)?.coerceIn(0, text.length) ?: 0
                     selectionEnd = caret?.getInt(END)?.coerceIn(0, text.length) ?: 0
                     viewMode = ViewMode.EDITOR
@@ -356,7 +375,13 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     val host = object : EditorHost {
         override fun fits(start: Int, end: Int, insert: String): Boolean {
             val s = session ?: return false
-            if (closing) return false  // read-only while a close writes the text (D4)
+            if (closing || readOnly != null) return false  // read-only while a close writes the text (D4)
+            // A paragraph over the cap could not be edited smoothly (ruling B): refused, as at the limit.
+            val lines = highlight?.lines
+            if (lines != null && Paragraphs.longestAfter(lines, start, end, insert) > Paragraphs.CAP) {
+                notice = "A paragraph cannot be longer than ${"%,d".format(Paragraphs.CAP)} characters; start a new line first."
+                return false
+            }
             if (s.fits(start, end, insert)) return true
             notice = "The document cannot grow past ${s.limitMiB()} MiB."
             return false
@@ -394,6 +419,9 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         override fun undo() = command(Command.UNDO)
         override fun redo() = command(Command.REDO)
         override fun coreText() = session?.text ?: ""
+        override fun loadingChanged(loading: Boolean) {
+            editorBusy = loading
+        }
     }
 
     /** The open document's text, for an editor being made (open, rotation, a change of view). */
@@ -462,8 +490,9 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             Command.ZOOM_IN -> zoom(1f)
             Command.ZOOM_OUT -> zoom(-1f)
             Command.VIEW -> setView(nextView(viewMode))
-            Command.UNDO -> session?.let { s -> if (!closing) s.undo()?.let { applyCoreChange(s, it) } }
-            Command.REDO -> session?.let { s -> if (!closing) s.redo()?.let { applyCoreChange(s, it) } }
+            // Not while a text goes into the editor (round 2): the change would need all of it.
+            Command.UNDO -> session?.let { s -> if (!closing && !editorBusy) s.undo()?.let { applyCoreChange(s, it) } }
+            Command.REDO -> session?.let { s -> if (!closing && !editorBusy) s.redo()?.let { applyCoreChange(s, it) } }
             Command.NEW -> if (session == null) newDocument() else closeEditor(then = ::newDocument)
             Command.OPEN, Command.CLOSE -> closeEditor()
             Command.IMPORT -> Unit  // the activity starts the system picker
@@ -478,7 +507,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     }
 
     fun setView(mode: ViewMode) {
-        if (mode == viewMode) return
+        if (mode == viewMode || readOnly != null) return
         viewMode = mode
         hint = null
         refreshPreview(reparse = false)
@@ -562,6 +591,8 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             statsJob?.cancel()
             previewJob?.cancel()
             openedText = null
+            readOnly = null
+            editorBusy = false
             s.close()
             highlight?.close()
             highlight = null

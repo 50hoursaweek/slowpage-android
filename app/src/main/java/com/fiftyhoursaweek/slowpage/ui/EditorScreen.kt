@@ -51,6 +51,8 @@ import com.fiftyhoursaweek.slowpage.editor.Command
 import com.fiftyhoursaweek.slowpage.editor.EditorText
 import com.fiftyhoursaweek.slowpage.editor.Look
 import com.fiftyhoursaweek.slowpage.editor.PageMeasure
+import com.fiftyhoursaweek.slowpage.editor.Paragraphs
+import com.fiftyhoursaweek.slowpage.editor.ReaderList
 import com.fiftyhoursaweek.slowpage.preview.PreviewList
 import com.fiftyhoursaweek.slowpage.preview.PreviewLook
 import uniffi.hushhour.FocusMode
@@ -68,6 +70,8 @@ import kotlin.math.roundToInt
 
 /** The page above and below the text, in dp (the top line sits above it). */
 private const val TOP_INSET_DP = 24f
+/** Room above a read-only text for its notice, in dp. */
+private const val READ_ONLY_NOTICE_DP = 72f
 
 /**
  * The page (phase 4): the editor, the preview, or both (V1, V2), with the top line (back to
@@ -110,7 +114,7 @@ fun EditorScreen(
                 // and in Preview it is hidden under the preview.
                 Layout(
                     content = {
-                        EditorPane(vm, panes, look, side, top, Modifier)
+                        if (vm.readOnly != null) ReaderPane(vm, look, side, top) else EditorPane(vm, panes, look, side, top, Modifier)
                         if (mode != ViewMode.EDITOR) {
                             Box(Modifier.background(divider))
                             PreviewPane(vm, panes, side, top, Modifier)
@@ -147,6 +151,12 @@ fun EditorScreen(
                 }
                 Column(Modifier.align(Alignment.TopCenter).padding(top = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     if (mode == ViewMode.PREVIEW) PreviewBanner(prefs.theme) { vm.setView(ViewMode.EDITOR); panes.editor?.let(::focusEditor) }
+                    if (vm.readOnly != null) {
+                        Hint("Read only: a paragraph in this document is longer than ${"%,d".format(Paragraphs.CAP)} characters, " +
+                            "too long to edit smoothly. It is shown as it is and never changed.", prefs.theme, READ_ONLY_TAG)
+                    }
+                    // Round 2: input waits while a long text goes into the editor, and says so.
+                    if (vm.editorBusy) Hint("Laying out the text… typing resumes in a moment", prefs.theme, BUSY_TAG)
                     vm.hint?.let { Hint(it, prefs.theme) }
                 }
             }
@@ -219,6 +229,18 @@ private fun EditorPane(vm: ShellViewModel, panes: Panes, look: Look, side: Int, 
     ) }
 }
 
+/** A document over the paragraph cap (ruling B): its text, read-only, in parts. */
+@Composable
+private fun ReaderPane(vm: ShellViewModel, look: Look, side: Int, top: Int) {
+    val text = vm.readOnly ?: return
+    AndroidView(
+        modifier = Modifier.clipToBounds().testTag(EDITOR_TAG),
+        factory = { context -> ReaderList(context, vm.faces) },
+        // Below the notice, which stays at the top.
+        update = { it.show(text, look, side, top + (READ_ONLY_NOTICE_DP * it.resources.displayMetrics.density).roundToInt()) },
+    )
+}
+
 fun focusEditor(editor: EditorText) {
     editor.requestFocus()
     val imm = editor.context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
@@ -279,10 +301,10 @@ private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () ->
         item("Export…") { onExport() }
         item("Close") { vm.command(Command.CLOSE) }
         HorizontalDivider()
-        item("Undo", enabled = vm.canUndo) { vm.command(Command.UNDO) }
-        item("Redo", enabled = vm.canRedo) { vm.command(Command.REDO) }
+        item("Undo", enabled = vm.canUndo && !vm.editorBusy) { vm.command(Command.UNDO) }
+        item("Redo", enabled = vm.canRedo && !vm.editorBusy) { vm.command(Command.REDO) }
         HorizontalDivider()
-        for (mode in ViewMode.entries) item("View: ${viewLabel(mode)}", checked = mode == vm.viewMode) { vm.setView(mode) }
+        for (mode in ViewMode.entries) item("View: ${viewLabel(mode)}", enabled = vm.readOnly == null, checked = mode == vm.viewMode) { vm.setView(mode) }
         HorizontalDivider()
         for (focus in FocusMode.entries) item("Spotlight: ${focusLabel(focus)}", checked = focus == p.focus) {
             vm.updatePreferences(vm.preferences.copy(focus = focus))
@@ -318,7 +340,9 @@ private fun StatusLine(vm: ShellViewModel, muted: Color) {
             TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.testTag(tag)) {
                 Text(label, color = if (active) text else muted, fontSize = 13.sp)
             }
-        if (vm.viewMode == ViewMode.PREVIEW) {
+        if (vm.readOnly != null) {
+            // Read-only (ruling B): no preview, so no view to switch to.
+        } else if (vm.viewMode == ViewMode.PREVIEW) {
             // In full Preview the mode is highlighted: white on the darkened accent.
             Surface(shape = RoundedCornerShape(50), color = Colours.accentFill(pal).compose(), onClick = { vm.command(Command.VIEW) }, modifier = Modifier.testTag(VIEW_TAG)) {
                 Text("View: Preview", color = Color.White, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
@@ -358,12 +382,12 @@ private fun PreviewBanner(theme: Theme, onEdit: () -> Unit) {
 }
 
 @Composable
-private fun Hint(text: String, theme: Theme) {
+private fun Hint(text: String, theme: Theme, tag: String = HINT_TAG) {
     val p = palette(theme)
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = p.text.compose().copy(alpha = 0.85f),
-        modifier = Modifier.padding(top = 10.dp).testTag(HINT_TAG),
+        modifier = Modifier.padding(top = 10.dp).widthIn(max = 720.dp).testTag(tag),
     ) {
         Text(text, color = p.background.compose(), fontSize = 14.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp))
     }
@@ -380,3 +404,5 @@ const val BANNER_TAG = "previewBanner"
 const val EDIT_TAG = "editButton"
 const val HINT_TAG = "previewHint"
 const val MENU_TAG = "menu"
+const val READ_ONLY_TAG = "readOnly"
+const val BUSY_TAG = "editorBusy"
