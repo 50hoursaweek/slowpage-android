@@ -1,0 +1,31 @@
+[package]
+name = "hushhour-ipad"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Hush Hour for iPadOS: the UniFFI bridge over hushhour-core plus the iPad-only Rust (document rules, spotlight layer, audio mixer)"
+repository = "https://github.com/50hoursaweek/inkpad-ipados"
+publish = false
+
+[lib]
+name = "hushhour_ipad"
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["cli"]
+
+[features]
+default = []
+cli = ["uniffi/cli"]
+
+[dependencies]
+# The shared core from the Linux hub: markdown scanner, stats, undo history, soundscapes,
+# file decoding, rng. Ink announces each new tag; bump deliberately.
+hushhour-core = { git = "https://github.com/50hoursaweek/hushhour", tag = "v0.4.2" }
+uniffi = { version = "0.32" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

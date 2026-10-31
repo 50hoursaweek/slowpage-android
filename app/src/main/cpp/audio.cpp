@@ -1,5 +1,5 @@
 // The Oboe output stream (A1): its data callback pulls from the Rust mixer through the mixer's
-// plain C export (`hushhour_mixer_render`, inkpad-ipados HushHourCore/src/ffi.rs), outside
+// plain C export (`hushhour_mixer_render`, vendor/inkpad-ipados/HushHourCore/src/ffi.rs), outside
 // UniFFI, in chunks the mixer renders without allocating. The mixer runs at 44.1 kHz stereo
 // float; Oboe resamples to the device rate. When it runs is decided in Kotlin
 // (`audio/AudioController.kt`); started and stopped only on the audio thread there. `allow`

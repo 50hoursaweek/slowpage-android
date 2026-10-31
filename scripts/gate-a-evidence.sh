@@ -32,10 +32,7 @@ cat "$ANDROID_HOME/ndk/29.0.14206865/source.properties" | grep Pkg.Revision
 df -h / | tail -1
 
 step "clean"
-rm -rf rust-out app/build app/.cxx
-if [ -d build/inkpad-ipados/HushHourCore ]; then
-    (cd build/inkpad-ipados/HushHourCore && cargo clean -q)
-fi
+rm -rf rust-out app/build app/.cxx build/cargo-target
 
 step "scripts/build-rust.sh"
 scripts/build-rust.sh

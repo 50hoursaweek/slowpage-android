@@ -1,29 +1,26 @@
 #!/bin/sh
-# Gate A: build hushhour-ipad (inkpad-ipados/HushHourCore) for arm64-v8a and generate its
-# Kotlin bindings. The crate is consumed at a pinned revision, never edited here.
+# Build hushhour-ipad (the iPad app's Rust crate, vendored in vendor/inkpad-ipados/HushHourCore)
+# for arm64-v8a and generate its Kotlin bindings; copy the bundled assets next to them.
+# Everything comes from this repository except hushhour-core, which Cargo fetches from the
+# public HushHour repository at the tag in Cargo.lock. The vendored files are never edited here
+# (vendor/inkpad-ipados/VENDORED.md; scripts/sync-vendored-core.sh re-copies them).
 # Output (not committed): rust-out/jniLibs/arm64-v8a/libhushhour_ipad.so, rust-out/kotlin/,
 # rust-out/assets/music/, rust-out/assets/fonts/, rust-out/assets/licences/, rust-out/assets/about/, rust-out/res/mipmap-*/ (launcher icon), rust-out/host/libhushhour_ipad.dylib (for JVM unit tests).
 set -eu
 
-REV=873d4f4c74ea22a52658494f2697e86c3a146ddf   # inkpad-ipados: "add cdylib crate type"
-# The iPad repository: a local clone if there is one, else GitHub (or INKPAD_IPADOS_REPO, a path or URL).
-SRC=${INKPAD_IPADOS_REPO:-$HOME/Dev/inkpad-ipados}
-[ -n "${INKPAD_IPADOS_REPO:-}" ] || [ -d "$SRC/.git" ] || SRC=https://github.com/50hoursaweek/inkpad-ipados
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-WORK=$ROOT/build/inkpad-ipados
+WORK=$ROOT/vendor/inkpad-ipados
 OUT=$ROOT/rust-out
+# Cargo's build output stays out of the vendored folder.
+CARGO_TARGET_DIR=$ROOT/build/cargo-target
+export CARGO_TARGET_DIR
 
 # ~/Library/Android/sdk may point at an unmounted volume; the toolchain lives in ~/Android/sdk.
 [ -d "${ANDROID_HOME:-/nonexistent}/ndk" ] || ANDROID_HOME=$HOME/Android/sdk
 ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865
 export ANDROID_HOME ANDROID_NDK_HOME
 
-if [ ! -d "$WORK/.git" ]; then
-    git clone --quiet --no-checkout "$SRC" "$WORK"
-fi
-git -C "$WORK" fetch --quiet origin 2>/dev/null || true
-git -C "$WORK" checkout --quiet --detach "$REV"
-echo "hushhour-ipad at $(git -C "$WORK" rev-parse HEAD)"
+echo "hushhour-ipad: $(sed -n 's/^Source commit: `\(.*\)`/\1/p' "$WORK/VENDORED.md") (vendored)"
 
 cd "$WORK/HushHourCore"
 # The soname lets the Android linker and JNA agree on one copy (one MIXER static).
@@ -37,19 +34,19 @@ RUSTFLAGS="${RUSTFLAGS:-} $REMAP -C link-arg=-Wl,-soname,libhushhour_ipad.so" \
 # Kotlin bindings (JNA loads it from rust-out/host).
 cargo build --release --lib --locked
 mkdir -p "$OUT/host"
-cp target/release/libhushhour_ipad.dylib "$OUT/host/"
+cp "$CARGO_TARGET_DIR/release/libhushhour_ipad.dylib" "$OUT/host/"
 
 rm -rf "$OUT/kotlin"
 cargo run --quiet --release --features cli --bin uniffi-bindgen -- \
     generate --library "$OUT/jniLibs/arm64-v8a/libhushhour_ipad.so" \
     --language kotlin --no-format --config "$ROOT/uniffi-android.toml" --out-dir "$OUT/kotlin"
-# Bundled music: the CC0 loops of the Linux app, as shipped in the iPad bundle at $REV.
+# Bundled music: the CC0 loops of the Linux app, as shipped in the iPad bundle (vendored).
 rm -rf "$OUT/assets/music"
 mkdir -p "$OUT/assets/music"
 cp "$WORK/HushHour/HushHour/Resources/Music/"*.ogg "$OUT/assets/music/"
 
 # Editor fonts (F3): the three OFL families, unmodified, with their licences; the same files
-# as hushhour-ref/assets/fonts (Linux), as shipped in the iPad bundle at $REV.
+# as hushhour-ref/assets/fonts (Linux), as shipped in the iPad bundle (vendored).
 rm -rf "$OUT/assets/fonts"
 mkdir -p "$OUT/assets/fonts"
 for f in "$WORK/HushHour/HushHour/Resources/Fonts/"IBMPlex*.ttf "$WORK/HushHour/HushHour/Resources/Fonts/"Literata-*.ttf \
@@ -58,7 +55,7 @@ for f in "$WORK/HushHour/HushHour/Resources/Fonts/"IBMPlex*.ttf "$WORK/HushHour/
     cp "$f" "$OUT/assets/fonts/"
 done
 
-# Phase 6: About's licence texts and icon, as shipped in the iPad bundle at $REV (Lato above is
+# Phase 6: About's licence texts and icon, as shipped in the iPad bundle (vendored) (Lato above is
 # the dialogs' face). The Android-only notices are in app/src/main/assets/licences.
 rm -rf "$OUT/assets/licences" "$OUT/assets/about"
 mkdir -p "$OUT/assets/licences" "$OUT/assets/about"

@@ -16,7 +16,11 @@
 - Emulator installed on `/Volumes/Expansion/hushhour-android-emulator` (sdk: emulator, platform-tools, AOSP arm64 API 31 image; AVD `slowpage-tablet` in `avd/`, 2000x1200, 240 dpi, landscape, no hardware keyboard; `user-home/` for ANDROID_USER_HOME).
 
 ## In progress
-- Phase 7, release prep (handoff `audit/handoffs/2026-10-30-phase-7-release.md`, notes `audit/phase-7/notes.md`): LICENSE, THIRD-PARTY-NOTICES.md, README, release-notes draft, version 1.0.0 (code 4), launcher icon (the iPad's), optional release signing in Gradle, `scripts/make-release-key.sh`, history scan (H1–H6 for Francesco).
+- Phase 7, release prep (handoff `audit/handoffs/2026-10-30-phase-7-release.md`, notes `audit/phase-7/notes.md`): LICENSE, THIRD-PARTY-NOTICES.md, README, release-notes draft, version 1.0.0 (code 4), launcher icon (the iPad's), release signing (key made by Francesco, cert SHA-256 B1:B8:E4:…:20:31:36).
+- 2026-11-01, Francesco's decisions:
+  - H1 and H5: the history is rewritten, with the noreply email and without `audit/`. `audit/` is now a local git repo of its own (`audit/phase-7/history-rewrite.md`).
+  - H6 (c): the iPad crate and the assets are vendored in `vendor/inkpad-ipados/` (`audit/phase-7/vendor-core.md`).
+  - The music credit now uses the agreed wording.
 
 ## Emulator
 - `/Volumes/Expansion/hushhour-android-emulator`. Start (stdin detached, ANDROID_HOME must point there too, the profile sets it to the old SDK):
@@ -25,8 +29,7 @@
 - Also an API 28 AVD, `slowpage-api28` (same command with `-avd slowpage-api28`), for the caret on 26–28. With 8 GiB of RAM, run one emulator at a time.
 
 ## Blocked
-- Release key: creating it was refused by this session's permission check; Francesco runs `scripts/make-release-key.sh` once (keystore `~/.android-keys/slowpage-release.jks`, password in the Keychain). Then `scripts/release-apk.sh --release`.
-- Decisions for Francesco before going public: H1 (author email in commits), H6 (`inkpad-ipados` is private; build from source needs it), music-loop CC0 claim (Lyria 3 terms). See `audit/phase-7/notes.md`.
+- Nothing.
 
 ## Next
-- The release-signed APK, then PMO's Codex audit, then Francesco's install test (uninstall the debug build first).
+- PMO's Codex audit of phase 7, then Francesco's install test of the release APK (uninstall the debug build first).

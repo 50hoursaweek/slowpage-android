@@ -1,6 +1,6 @@
 # Slowpage for Android
 
-Slowpage is a quiet, distraction-free Markdown editor for tablets. This is the Android port. The same app exists for Linux ([HushHour](https://github.com/50hoursaweek/hushhour)) and iPad ([Slowpage for iPadOS](https://github.com/50hoursaweek/inkpad-ipados)), and all three share one Rust core, `hushhour-core`.
+Slowpage is a quiet, distraction-free Markdown editor for tablets. This is the Android port. The same app exists for Linux ([HushHour](https://github.com/50hoursaweek/hushhour)) and iPad (Slowpage for iPadOS), and all three share one Rust core, `hushhour-core`.
 
 - The page fills the screen.
 - A spotlight dims everything but the paragraph or sentence you are writing.
@@ -71,7 +71,10 @@ Toolchain:
 | Rust | 1.99 stable, with `rustup target add aarch64-linux-android` |
 | cargo-ndk | 4.1.2 (`cargo install cargo-ndk`) |
 
-The Rust core is not in this repository. `scripts/build-rust.sh` takes it from the iPad app's repository, [`inkpad-ipados`](https://github.com/50hoursaweek/inkpad-ipados), at the pinned revision `873d4f4`. It uses a local clone at `~/Dev/inkpad-ipados` if there is one, else GitHub; set `INKPAD_IPADOS_REPO` to another path or URL. That crate depends on [`hushhour-core`](https://github.com/50hoursaweek/hushhour) at tag v0.4.2, which Cargo fetches.
+Everything the build needs is in this repository, or public:
+- **The iPad app's Rust crate (`hushhour-ipad`) and the bundled assets** are vendored in `vendor/inkpad-ipados/`, unmodified. The assets are the fonts, music loops, typing sounds, licence texts and icon art. `vendor/inkpad-ipados/VENDORED.md` lists the source commit, every file with its licence and checksum, and how they are re-synced.
+- **`hushhour-core`** comes from the public [HushHour](https://github.com/50hoursaweek/hushhour) repository, at tag v0.4.2. Cargo fetches it, as `Cargo.lock` pins it.
+- **Rust crates** come from crates.io.
 
 The script builds:
 - the core for arm64 Android and for the Mac (the JVM tests use the Mac build);
@@ -99,8 +102,11 @@ No key, password or keystore is ever committed (`.gitignore` covers `*.jks`, `*.
 ```
 app/src/main/java/…   Kotlin: Compose UI, the editor (a TextView-based page), documents, audio control
 app/src/main/cpp/     The Oboe audio stream that pulls the core's mixer
-scripts/              build-rust.sh, release-apk.sh, make-release-key.sh
+scripts/              build-rust.sh, release-apk.sh, make-release-key.sh, sync-vendored-core.sh
+vendor/inkpad-ipados/ The iPad app's Rust crate and the bundled assets, vendored (VENDORED.md)
 ```
 
 ## Licence
-MIT (`LICENSE`). Fonts are under the SIL Open Font License, sounds and music under CC0, and the libraries under Apache 2.0, MPL 2.0 and others. Everything is listed in `THIRD-PARTY-NOTICES.md` and in the app under About → Credits and licences.
+MIT (`LICENSE`). Fonts are under the SIL Open Font License, typing sounds under CC0, and the libraries under Apache 2.0, MPL 2.0 and others. Everything is listed in `THIRD-PARTY-NOTICES.md` and in the app under About → Credits and licences.
+
+Music loops generated with Google Lyria 3 (AI, SynthID watermark). Dedicated to the public domain under CC0, to the extent any rights exist.
