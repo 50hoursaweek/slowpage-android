@@ -12,3 +12,6 @@ app/.cxx/
 *.jks
 *.keystore
 keystore.properties
+
+# The QA trail stays local, in its own git repo (audit/.git)
+audit/

@@ -49,4 +49,3 @@ The background-pattern shader (`app/src/main/java/.../editor/Backdrop.kt`) is a 
 |---|---|
 | `gradle/wrapper/gradle-wrapper.jar`, `gradlew`, `gradlew.bat` (Gradle) | Apache License 2.0 |
 | `app/src/main/assets/licences/LICENSE-Apache-2.0.txt`, `LICENSE-LLVM.txt` | The licence texts themselves |
-| Screenshots under `audit/` | MIT, with the app (emulator and tablet captures of Slowpage) |

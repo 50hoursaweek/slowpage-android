@@ -100,7 +100,6 @@ No key, password or keystore is ever committed (`.gitignore` covers `*.jks`, `*.
 app/src/main/java/…   Kotlin: Compose UI, the editor (a TextView-based page), documents, audio control
 app/src/main/cpp/     The Oboe audio stream that pulls the core's mixer
 scripts/              build-rust.sh, release-apk.sh, make-release-key.sh
-audit/                The project's QA trail: plans, handoffs, independent audits, device runs
 ```
 
 ## Licence
