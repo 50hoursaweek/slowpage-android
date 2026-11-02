@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Tablet only (plan decision). -->
-    <supports-screens android:smallScreens="false" android:normalScreens="false"
+    <!-- Phones and tablets (Francesco, 2026-11-02); not checked below 360 dp. -->
+    <supports-screens android:smallScreens="false" android:normalScreens="true"
         android:largeScreens="true" android:xlargeScreens="true" />
 
     <!-- allowBackup=false: S5, approved.
