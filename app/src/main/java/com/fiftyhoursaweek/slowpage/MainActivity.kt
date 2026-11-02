@@ -28,6 +28,7 @@ import com.fiftyhoursaweek.slowpage.editor.Shortcuts
 import com.fiftyhoursaweek.slowpage.store.Names
 import com.fiftyhoursaweek.slowpage.ui.DialogSheet
 import com.fiftyhoursaweek.slowpage.ui.EditorScreen
+import com.fiftyhoursaweek.slowpage.ui.ImmersiveWindow
 import com.fiftyhoursaweek.slowpage.ui.SlowpageTheme
 import com.fiftyhoursaweek.slowpage.ui.StartScreen
 import com.fiftyhoursaweek.slowpage.ui.WelcomeTour
@@ -63,6 +64,7 @@ class MainActivity : ComponentActivity() {
         exporting = savedInstanceState?.getString(EXPORTING_KEY)
         setContent {
             SlowpageTheme(vm.preferences.theme) {
+                ImmersiveWindow()
                 val snackbar = remember { SnackbarHostState() }
                 LaunchedEffect(vm.notice) {
                     vm.notice?.let {

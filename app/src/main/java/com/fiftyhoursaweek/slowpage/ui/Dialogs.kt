@@ -111,6 +111,7 @@ fun DialogSheet(dialog: Dialog, vm: ShellViewModel, onImportMusic: () -> Unit) {
     var pages by rememberSaveable(dialog) { mutableStateOf(listOf<String>()) }
     val close = { vm.closeDialog() }
     ComposeDialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        ImmersiveWindow()
         Surface(
             shape = RoundedCornerShape(14.dp),
             color = MaterialTheme.colorScheme.background,
@@ -336,6 +337,7 @@ private fun MusicPicker(vm: ShellViewModel, font: FontFamily) {
             Text("${musicLabel(checked)}  ▾", fontFamily = font, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            ImmersiveWindow()
             for (choice in vm.musicChoices) {
                 DropdownMenuItem(
                     text = { Text(if (choice == checked) "✓  ${musicLabel(choice)}" else musicLabel(choice), fontFamily = font) },

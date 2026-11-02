@@ -84,7 +84,7 @@ fun StartScreen(
     confirmDelete?.let { name ->
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
-            title = { Text("Delete “$name”?") },
+            title = { ImmersiveWindow(); Text("Delete “$name”?") },
             text = { Text("It is removed from this tablet. Export it first to keep a copy elsewhere.") },
             confirmButton = {
                 TextButton(onClick = { confirmDelete = null; onDelete(name) }) {
@@ -121,6 +121,7 @@ private fun DocumentRow(doc: DocumentEntry, onOpen: () -> Unit, onExport: () -> 
         Box {
             TextButton(onClick = { menu = true }) { Text("⋯") }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                ImmersiveWindow()
                 DropdownMenuItem(text = { Text("Export…") }, onClick = { menu = false; onExport() })
                 DropdownMenuItem(text = { Text("Delete…") }, onClick = { menu = false; onDelete() })
             }

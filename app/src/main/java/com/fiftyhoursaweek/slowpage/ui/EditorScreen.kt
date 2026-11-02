@@ -301,6 +301,7 @@ private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () ->
     @Composable fun item(label: String, enabled: Boolean = true, action: () -> Unit) =
         DropdownMenuItem(text = { Text(label) }, onClick = run(action), enabled = enabled)
     DropdownMenu(expanded = vm.menuOpen, onDismissRequest = { vm.menuOpen = false }) {
+        ImmersiveWindow()
         item("New") { vm.command(Command.NEW) }
         item("Import…") { onImport() }
         item("Export…") { onExport() }
