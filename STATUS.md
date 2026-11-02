@@ -11,8 +11,9 @@ Detailed notes, audits and device runs are kept in the maintainer's local QA rec
 - Phase 7: release prep.
   - LICENSE, THIRD-PARTY-NOTICES.md, the README, version 1.0.0 (code 4), the launcher icon, release signing.
   - The iPad crate and assets are vendored in `vendor/inkpad-ipados/`.
-  - The release APK is built from `be2114f`: SHA-256 `95b8cad754b32d8a1c29244884c04ced900d37c77012a61d6e0facdc2f153cfd`, certificate `B1:B8:E4:68:DB:42:16:C5:DD:4B:D9:81:01:4F:A3:2A:90:8A:D4:13:C6:3E:6B:DA:D5:D3:48:FE:C1:20:31:36`.
-  - Audit round 1: 0 BLOCKING; its MINOR documentation fixes are done after `be2114f`.
+  - The release APK is built from `6d7a56c`: SHA-256 `d6398e70f9b7b138f7826407a7261a0f412d13d011b0788c0b2f141a62ce07e0`, certificate `B1:B8:E4:68:DB:42:16:C5:DD:4B:D9:81:01:4F:A3:2A:90:8A:D4:13:C6:3E:6B:DA:D5:D3:48:FE:C1:20:31:36`.
+  - Audit round 1: 0 BLOCKING; its MINOR documentation fixes are done.
+  - The editor Menu keeps only the file items, Undo and Redo, the Appearance and Sound and music pop-ups, Welcome and About (Francesco's install test).
 
 ## Emulator
 - The SDK and the AVDs live on an external drive. Start an AVD, with stdin detached, and point every Android variable at that drive (`E` = its folder):
@@ -24,4 +25,4 @@ Detailed notes, audits and device runs are kept in the maintainer's local QA rec
 - Nothing.
 
 ## Next
-- Francesco's install test of the release APK (export documents, uninstall the test build, then install), then tag v1.0.0 at `be2114f` and publish. Both are Francesco's steps.
+- Francesco's install test of the release APK (export documents, uninstall the test build, then install), then tag v1.0.0 at `6d7a56c` and publish. Both are Francesco's steps.
