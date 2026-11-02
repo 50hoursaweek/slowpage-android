@@ -27,9 +27,9 @@ Steps:
 ### Verify the APK
 Two checks prove the file is the one released here and that it is signed with Slowpage's release key.
 
-1. Compare the APK's SHA-256 with the one listed in the release notes. For 1.0.0, built from commit `055a793d751d7819a0127ae9d592faa729725067`, it is:
+1. Compare the APK's SHA-256 with the one listed in the release notes. For 1.0.0, built from commit `58f7cfde2b3e080345144ef2e047f9f316213e2b`, it is:
    ```
-   fd184664dee8d8972b0830c67c630f9c51cca7d9bf28807313c1d4cab702ee18
+   aaf1d7402ad4932cf28e994499375fe4634f1440b01a6d910bba4712bad637a0
    ```
    To compute it:
    ```
