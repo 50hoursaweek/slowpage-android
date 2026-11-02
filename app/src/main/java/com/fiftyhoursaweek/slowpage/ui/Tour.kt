@@ -271,8 +271,9 @@ private fun Chevron(left: Boolean, colour: Color, visible: Boolean, tag: String,
 
 /** The cards' pieces, in the page's colours. */
 private class Pieces(val font: FontFamily, val text: Color, val page: Color, val quiet: Color) {
+    /** On a phone a title can take two lines: the line height is the title's, not the theme's 24 sp. */
     @Composable
-    fun Title(s: String) = Text(s, fontFamily = font, fontSize = 40.sp, color = text, modifier = Modifier.semantics { heading() })
+    fun Title(s: String) = Text(s, fontFamily = font, fontSize = 40.sp, lineHeight = 48.sp, color = text, modifier = Modifier.semantics { heading() })
 
     @Composable
     fun Paragraph(s: String) = Text(s, fontFamily = font, fontSize = 19.sp, color = quiet)
@@ -301,7 +302,7 @@ private class Pieces(val font: FontFamily, val text: Color, val page: Color, val
     @Composable
     fun Welcome() = Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Title("Slowpage")
-        Text("A quiet place to write.", fontFamily = font, fontSize = 24.sp, color = text)
+        Text("A quiet place to write.", fontFamily = font, fontSize = 24.sp, lineHeight = 30.sp, color = text)
         Box(Modifier.padding(top = 10.dp)) { Paragraph("Plain Markdown files, saved as you type. Nothing on the page but your words until you ask for more.") }
         Text("Swipe, or press →, to look around. It takes a minute.", fontFamily = font, fontSize = 15.sp, color = quiet, modifier = Modifier.padding(top = 26.dp))
     }

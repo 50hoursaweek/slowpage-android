@@ -48,6 +48,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -174,24 +175,44 @@ private const val CREDITS = "credits"
 
 private fun pageTitle(page: String) = if (page == CREDITS) "Credits and licences" else LICENCES.firstOrNull { it.second == page }?.first ?: page
 
+/**
+ * The back link, the title centred and Done. On a phone the three would overlap (Francesco's
+ * phone test): the title is centred when it fits clear of both sides, else it takes the room
+ * between them; the back link takes at most 40% of the bar; either is cut short with "…" rather
+ * than run into the other.
+ */
 @Composable
 private fun TitleBar(title: String, backTo: String?, font: FontFamily, onBack: () -> Unit, onDone: () -> Unit) {
-    Box(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp)) {
-        if (backTo != null) {
-            TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterStart)) {
-                Text("‹ $backTo", fontFamily = font, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Layout(
+        content = {
+            if (backTo != null) {
+                TextButton(onClick = onBack) {
+                    Text("‹ $backTo", fontFamily = font, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
-        }
-        Text(
-            title,
-            fontFamily = font,
-            fontSize = 17.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.align(Alignment.Center).widthIn(max = 220.dp),
-        )
-        TextButton(onClick = onDone, modifier = Modifier.align(Alignment.CenterEnd).testTag(DONE_TAG)) {
-            Text("Done", fontFamily = font, fontSize = 17.sp)
+            Text(title, fontFamily = font, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            TextButton(onClick = onDone, modifier = Modifier.testTag(DONE_TAG)) {
+                Text("Done", fontFamily = font, fontSize = 17.sp, maxLines = 1)
+            }
+        },
+        modifier = Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+    ) { parts, c ->
+        val w = c.maxWidth
+        val h = c.maxHeight
+        val loose = c.copy(minWidth = 0, minHeight = 0)
+        val back = if (backTo != null) parts[0].measure(loose.copy(maxWidth = w * 2 / 5)) else null
+        val done = parts.last().measure(loose)
+        val side = maxOf(back?.width ?: 0, done.width)
+        val title = parts[if (backTo != null) 1 else 0]
+        val centred = minOf(220.dp.roundToPx(), maxOf(0, w - 2 * side))
+        // Centred when it fits there; otherwise in all the room between the back link and Done.
+        val fits = title.maxIntrinsicWidth(h) <= centred
+        val gap = maxOf(0, w - (back?.width ?: 0) - done.width)
+        val text = title.measure(loose.copy(maxWidth = if (fits) centred else gap))
+        layout(w, h) {
+            back?.place(0, (h - back.height) / 2)
+            text.place(if (fits) (w - text.width) / 2 else back?.width ?: 0, (h - text.height) / 2)
+            done.place(w - done.width, (h - done.height) / 2)
         }
     }
 }

@@ -85,7 +85,7 @@ fun StartScreen(
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
             title = { ImmersiveWindow(); Text("Delete “$name”?") },
-            text = { Text("It is removed from this tablet. Export it first to keep a copy elsewhere.") },
+            text = { Text("It is removed from this device. Export it first to keep a copy elsewhere.") },
             confirmButton = {
                 TextButton(onClick = { confirmDelete = null; onDelete(name) }) {
                     Text("Delete", color = MaterialTheme.colorScheme.error)

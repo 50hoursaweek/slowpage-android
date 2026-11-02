@@ -6,6 +6,10 @@ import android.view.View
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -29,15 +33,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,6 +76,7 @@ import uniffi.hushhour.palette
 import uniffi.hushhour.themeLabel
 import uniffi.hushhour.viewLabel
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /** The page above and below the text, in dp (the top line sits above it). */
 private const val TOP_INSET_DP = 24f
@@ -279,7 +288,8 @@ private fun TopLine(vm: ShellViewModel, name: String, status: String, onExport: 
     // On the plain page colour, as the status line: the background pattern shows only behind the page.
     Row(Modifier.fillMaxWidth().background(colors.background).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { vm.command(Command.CLOSE) }, enabled = !vm.closing) { Text("‹ Documents") }
-        Text(name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+        // A long name, cut short with "…", keeps a gap before the save status.
+        Text(name, Modifier.weight(1f).padding(end = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
         Text(
             status,
             color = if (status.startsWith("Not saved")) colors.error else colors.onSurfaceVariant,
@@ -321,37 +331,70 @@ private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () ->
     }
 }
 
-/** Statistics and the switches, as the Linux status bar (E15). */
+/**
+ * Statistics and the switches, as the Linux status bar (E15). On a narrow screen (a phone) the
+ * row scrolls sideways, by a swipe or by the ‹ and › at its ends, shown only when there is more
+ * that way; nothing ever wraps (Francesco's phone test, 2026-11-02). When it all fits, as on the
+ * tablet, there are no arrows: the statistics on the left, the switches on the right.
+ */
 @Composable
 private fun StatusLine(vm: ShellViewModel, muted: Color) {
     val p = vm.preferences
     val pal = palette(p.theme)
     val text = pal.text.compose()
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    // While the row overflows both arrows keep their place, an arrow with nothing more that way
+    // blank and not tappable, so a second tap at the end never lands on a switch. Once it has
+    // overflowed at this width the arrows stay: a row that fits only without them would
+    // otherwise show and hide them in turn. (Before its first layout the row has no viewport.)
+    val overflowsNow = scroll.viewportSize > 0 && scroll.maxValue in 1 until Int.MAX_VALUE
+    val overflowed = remember(LocalWindowInfo.current.containerSize.width) { mutableStateOf(false) }
+    if (overflowsNow && !overflowed.value) SideEffect { overflowed.value = true }
+    val overflows = overflowsNow || overflowed.value
+    @Composable fun arrow(label: String, more: Boolean, tag: String, by: () -> Float) {
+        val modifier = if (more) Modifier.testTag(tag).clickable { scope.launch { scroll.animateScrollBy(by()) } } else Modifier.alpha(0f)
+        Text(label, color = muted, fontSize = 13.sp, maxLines = 1, softWrap = false, modifier = modifier.padding(horizontal = 8.dp, vertical = 10.dp))
+    }
     Row(
         // On the plain page colour, as on the iPad: nothing of the page shows behind the bar.
         Modifier.fillMaxWidth().background(pal.background.compose()).padding(horizontal = 12.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(vm.stats, color = muted, fontSize = 13.sp, maxLines = 1, modifier = Modifier.weight(1f).testTag(STATS_TAG))
-        @Composable fun switch(label: String, active: Boolean, tag: String, onClick: () -> Unit) =
-            TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.testTag(tag)) {
-                Text(label, color = if (active) text else muted, fontSize = 13.sp)
+        // About a screen's width per tap: the visible part of the row, less a little to keep context.
+        if (overflows) arrow("‹", scroll.canScrollBackward, STATUS_BACK_TAG) { -scroll.viewportSize * 0.9f }
+        BoxWithConstraints(Modifier.weight(1f).testTag(STATUS_ROW_TAG)) {
+            Row(
+                Modifier.horizontalScroll(scroll).widthIn(min = maxWidth),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(vm.stats, color = muted, fontSize = 13.sp, maxLines = 1, softWrap = false,
+                    modifier = Modifier.padding(end = 8.dp).testTag(STATS_TAG))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    @Composable fun switch(label: String, active: Boolean, tag: String, onClick: () -> Unit) =
+                        TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.testTag(tag)) {
+                            Text(label, color = if (active) text else muted, fontSize = 13.sp, maxLines = 1, softWrap = false)
+                        }
+                    if (vm.readOnly != null) {
+                        // Read-only (ruling B): no preview, so no view to switch to.
+                    } else if (vm.viewMode == ViewMode.PREVIEW) {
+                        // In full Preview the mode is highlighted: white on the darkened accent.
+                        Surface(shape = RoundedCornerShape(50), color = Colours.accentFill(pal).compose(), onClick = { vm.command(Command.VIEW) }, modifier = Modifier.testTag(VIEW_TAG)) {
+                            Text("View: Preview", color = Color.White, fontSize = 13.sp, maxLines = 1, softWrap = false,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                        }
+                    } else {
+                        switch("View: ${viewLabel(vm.viewMode)}", vm.viewMode != ViewMode.EDITOR, VIEW_TAG) { vm.command(Command.VIEW) }
+                    }
+                    switch("Spotlight: ${focusLabel(p.focus)}", p.focus != FocusMode.OFF, "spotlight") { vm.command(Command.SPOTLIGHT) }
+                    switch("Anchor: ${if (p.typewriter) "On" else "Off"}", p.typewriter, "anchor") { vm.command(Command.ANCHOR) }
+                    switch(fontLabel(p.font), false, "font") { vm.command(Command.FONT) }
+                    switch(themeLabel(p.theme), false, "theme") { vm.command(Command.THEME) }
+                }
             }
-        if (vm.readOnly != null) {
-            // Read-only (ruling B): no preview, so no view to switch to.
-        } else if (vm.viewMode == ViewMode.PREVIEW) {
-            // In full Preview the mode is highlighted: white on the darkened accent.
-            Surface(shape = RoundedCornerShape(50), color = Colours.accentFill(pal).compose(), onClick = { vm.command(Command.VIEW) }, modifier = Modifier.testTag(VIEW_TAG)) {
-                Text("View: Preview", color = Color.White, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-            }
-        } else {
-            switch("View: ${viewLabel(vm.viewMode)}", vm.viewMode != ViewMode.EDITOR, VIEW_TAG) { vm.command(Command.VIEW) }
         }
-        switch("Spotlight: ${focusLabel(p.focus)}", p.focus != FocusMode.OFF, "spotlight") { vm.command(Command.SPOTLIGHT) }
-        switch("Anchor: ${if (p.typewriter) "On" else "Off"}", p.typewriter, "anchor") { vm.command(Command.ANCHOR) }
-        switch(fontLabel(p.font), false, "font") { vm.command(Command.FONT) }
-        switch(themeLabel(p.theme), false, "theme") { vm.command(Command.THEME) }
+        if (overflows) arrow("›", scroll.canScrollForward, STATUS_FORWARD_TAG) { scroll.viewportSize * 0.9f }
     }
 }
 
@@ -397,6 +440,9 @@ private fun uniffi.hushhour.Rgb.compose() = Color(r, g, b)
 const val EDITOR_TAG = "editor"
 const val PREVIEW_TAG = "preview"
 const val STATS_TAG = "stats"
+const val STATUS_ROW_TAG = "statusRow"
+const val STATUS_BACK_TAG = "statusBack"
+const val STATUS_FORWARD_TAG = "statusForward"
 const val VIEW_TAG = "viewMode"
 const val BANNER_TAG = "previewBanner"
 const val EDIT_TAG = "editButton"

@@ -717,7 +717,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         val reason = (state as? Persistence.Failed)?.reason ?: "the disk refused it"
         // Not "Export": an export saves first, and that is what fails (Codex round 2, MINOR 3).
         notice = "“${s.name}” could not be saved, and no copy could be kept ($reason). " +
-            "Keep Slowpage open and free some space on the tablet; the text is saved again on your next change or when you close it."
+            "Keep Slowpage open and free some space on the device; the text is saved again on your next change or when you close it."
     }
 
     /**

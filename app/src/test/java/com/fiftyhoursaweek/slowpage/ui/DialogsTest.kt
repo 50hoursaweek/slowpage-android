@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isPopup
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -168,6 +169,22 @@ class DialogsTest {
         compose.onNodeWithText("‹ About").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("aboutWelcome").assertExists()
+    }
+
+    /** On a phone the back link, the title and Done stay apart (Francesco's phone test). */
+    @Config(qualifiers = "w360dp-h780dp-port")
+    @Test fun atPhoneWidthTheTitleBarsDoNotOverlap() {
+        vm.showDialog(Dialog.ABOUT)
+        show()
+        fun apart(back: String, title: String) {
+            val boxes = listOf(back, title).map { compose.onNodeWithText(it, useUnmergedTree = true).getBoundsInRoot() } +
+                compose.onNodeWithTag(DONE_TAG, useUnmergedTree = true).getBoundsInRoot()
+            boxes.zipWithNext { a, b -> assertTrue("$title: $a ends before $b", a.right <= b.left) }
+        }
+        click("credits")
+        apart("‹ About", "Credits and licences")
+        click("licence-Apache License 2.0")
+        apart("‹ Credits and licences", "Apache License 2.0")
     }
 
     @Test fun theEditorsMenuHasOnlyTheFileItemsUndoThePopUpsAndAbout() {
