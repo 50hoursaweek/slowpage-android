@@ -4,10 +4,16 @@ import android.os.Build
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -34,9 +40,14 @@ import java.time.Duration
 import java.util.concurrent.Executors
 
 /**
- * Full screen on every screen (Francesco, 2026-11-02): every window of the app, the activity
- * and each dialog, tour and menu over it, asks for the status and navigation bars hidden,
- * shown only for a moment by a swipe. The windows are composed as MainActivity composes them.
+ * Full screen on every screen (Francesco, 2026-11-02). Composed as MainActivity composes them,
+ * each window open at each step asks for the status and navigation bars hidden, shown only for a
+ * moment by a swipe: the tour; the start screen, a document's ⋯ menu and the delete
+ * confirmation; the editor, its Menu, Appearance, Sound and music with its music picker, and
+ * About. Then the bars are brought back and the window loses and regains focus (as after the
+ * background, a file picker, a closed pop-up or the keyboard): hidden again. Rotation recreates
+ * the activity, which composes this again; the keyboard and the overlap of transient bars are
+ * checked on the emulator, not here.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w1280dp-h800dp-land")
@@ -70,7 +81,10 @@ class ImmersiveTest {
             SlowpageTheme(vm.preferences.theme) {
                 ImmersiveWindow()
                 when (val screen = vm.screen) {
-                    Screen.Start -> {}
+                    Screen.Start -> StartScreen(
+                        documents = vm.documents, recent = vm.recent, problems = vm.problems,
+                        onNew = vm::newDocument, onImport = {}, onOpen = vm::open, onExport = {}, onDelete = vm::delete,
+                    )
                     is Screen.Editor -> EditorScreen(vm, screen.name, vm.status, onExport = {}, onImport = {})
                 }
                 vm.dialog?.let { DialogSheet(it, vm, onImportMusic = {}) }
@@ -98,6 +112,61 @@ class ImmersiveTest {
         compose.waitForIdle()
         assertEquals("Appearance", 1, dialogs())
         assertAllFullScreen("the editor and Appearance")
+        vm.closeDialog()
+        vm.showDialog(Dialog.SOUND)
+        compose.waitForIdle()
+        val menus = popups()
+        compose.onNodeWithTag("musicPicker").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals("the music picker", menus + 1, popups())
+        assertAllFullScreen("Sound and music and its music picker")
+        vm.closeDialog()
+        vm.showDialog(Dialog.ABOUT)
+        compose.waitForIdle()
+        assertAllFullScreen("About")
+        vm.closeDialog()
+        compose.waitForIdle()
+
+        // The start screen's ⋯ menu and the delete confirmation.
+        vm.back()
+        until("the start screen") { vm.screen == Screen.Start && vm.documents.isNotEmpty() }
+        compose.waitForIdle()
+        val before = popups()
+        compose.onAllNodesWithText("⋯")[0].performClick()
+        compose.waitForIdle()
+        assertEquals("the ⋯ menu", before + 1, popups())
+        assertAllFullScreen("the start screen and a document's ⋯ menu")
+        compose.onNodeWithText("Delete…").performClick()
+        compose.waitForIdle()
+        assertEquals("the delete confirmation", 1, dialogs())
+        assertAllFullScreen("the delete confirmation")
+        compose.onNodeWithText("Cancel").performClick()
+        compose.waitForIdle()
+
+        // The bars brought back (as by the system, a picker or the keyboard), then the window
+        // loses and regains focus, as the platform reports it: hidden again. (Robolectric sends
+        // no window focus on resume, so the focus change is dispatched as ViewRootImpl does.)
+        val activity = compose.activity.window.decorView
+        showBars(activity)
+        focus(activity, false)
+        focus(activity, true)
+        compose.waitForIdle()
+        assertAllFullScreen("the activity, back in front")
+    }
+
+    private fun focus(root: View, focused: Boolean) {
+        ViewTreeObserver::class.java.getDeclaredMethod("dispatchOnWindowFocusChange", Boolean::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(root.viewTreeObserver, focused)
+    }
+
+    private fun showBars(root: View) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            root.windowInsetsController!!.show(WindowInsets.Type.systemBars())
+        } else {
+            @Suppress("DEPRECATION")
+            tree(root).forEach { it.systemUiVisibility = 0 }
+        }
+        compose.waitForIdle()
     }
 
     private fun assertAllFullScreen(what: String) {
