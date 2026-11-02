@@ -11,7 +11,7 @@ Detailed notes, audits and device runs are kept in the maintainer's local QA rec
 - Phase 7: release prep.
   - LICENSE, THIRD-PARTY-NOTICES.md, the README, version 1.0.0 (code 4), the launcher icon, release signing.
   - The iPad crate and assets are vendored in `vendor/inkpad-ipados/`.
-  - The release APK is built from `6d7a56c`: SHA-256 `d6398e70f9b7b138f7826407a7261a0f412d13d011b0788c0b2f141a62ce07e0`, certificate `B1:B8:E4:68:DB:42:16:C5:DD:4B:D9:81:01:4F:A3:2A:90:8A:D4:13:C6:3E:6B:DA:D5:D3:48:FE:C1:20:31:36`.
+  - The release APK is built from `2a0f233`: SHA-256 `21ec497ff9c510b34184b1988fbdf7ad5dbfb14af61400a448c665861d2776fa`, certificate `B1:B8:E4:68:DB:42:16:C5:DD:4B:D9:81:01:4F:A3:2A:90:8A:D4:13:C6:3E:6B:DA:D5:D3:48:FE:C1:20:31:36`.
   - Audit round 1: 0 BLOCKING; its MINOR documentation fixes are done.
   - The editor Menu keeps only the file items, Undo and Redo, the Appearance and Sound and music pop-ups, Welcome and About (Francesco's install test).
   - Full screen on every screen and in every dialog and menu: the status and navigation bars are hidden, and a swipe from an edge shows them for a moment (Francesco).
@@ -29,4 +29,4 @@ Detailed notes, audits and device runs are kept in the maintainer's local QA rec
 - Blocking notifications while writing (Do Not Disturb), as an opt-in. It needs the notification-policy access the user grants in system settings, so it is to be designed first (Francesco, 2026-11-02).
 
 ## Next
-- Francesco's install test of the release APK (export documents, uninstall the test build, then install), then tag v1.0.0 at `6d7a56c` and publish. Both are Francesco's steps.
+- Francesco's install test of the release APK (export documents, uninstall the test build, then install), then tag v1.0.0 at `2a0f233` and publish. Both are Francesco's steps.
