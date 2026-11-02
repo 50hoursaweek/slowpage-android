@@ -1,6 +1,6 @@
 # Slowpage for Android
 
-Slowpage is a quiet, distraction-free Markdown editor for tablets. This is the Android port. The same app exists for Linux ([HushHour](https://github.com/50hoursaweek/hushhour)) and iPad (Slowpage for iPadOS), and all three share one Rust core, `hushhour-core`.
+Slowpage is a quiet, distraction-free Markdown editor for phones and tablets. This is the Android port. The same app exists for Linux ([HushHour](https://github.com/50hoursaweek/hushhour)) and iPad (Slowpage for iPadOS), and all three share one Rust core, `hushhour-core`.
 
 - The page fills the screen.
 - A spotlight dims everything but the paragraph or sentence you are writing.
@@ -15,21 +15,21 @@ Free and open source under the MIT licence. There are no ads, no accounts and no
 Slowpage is not on Google Play; it is published as an APK on this repository's Releases page.
 
 Requirements:
-- An Android **tablet** running Android 8.0 (API 26) or newer, with a 64-bit ARM processor (arm64-v8a). The app is built for tablets only.
+- An Android phone or tablet running Android 8.0 (API 26) or newer, with a 64-bit ARM processor (arm64-v8a).
 - About 50 MB of free space (28 MB installed, plus 17 MB of music loops once one is played).
 
 Steps:
 1. Download `slowpage-1.0.0.apk` from Releases.
 2. Optional: check it (see Verify below).
-3. Open it on the tablet. Android asks to allow installs from that source (the browser or Files app): allow it in the prompt, or in Settings → Apps → Special app access → Install unknown apps.
+3. Open it on the phone or tablet. Android asks to allow installs from that source (the browser or Files app): allow it in the prompt, or in Settings → Apps → Special app access → Install unknown apps.
 4. Install, then open Slowpage. A short welcome tour shows on first launch.
 
 ### Verify the APK
 Two checks prove the file is the one released here and that it is signed with Slowpage's release key.
 
-1. Compare the APK's SHA-256 with the one listed in the release notes. For 1.0.0, built from commit `2a0f233a3453c80acf9abeed110d93c5ab4425ac`, it is:
+1. Compare the APK's SHA-256 with the one listed in the release notes. For 1.0.0, built from commit `055a793d751d7819a0127ae9d592faa729725067`, it is:
    ```
-   21ec497ff9c510b34184b1988fbdf7ad5dbfb14af61400a448c665861d2776fa
+   fd184664dee8d8972b0830c67c630f9c51cca7d9bf28807313c1d4cab702ee18
    ```
    To compute it:
    ```
@@ -55,7 +55,7 @@ Install the newer APK over the installed one. Your documents and settings stay.
 If you tested a pre-release build (signed with a development key), Android refuses to install a release over it. Export your documents first, then uninstall the test build, then install the release. Uninstalling deletes the app's documents, so exporting first is essential.
 
 ### Your documents
-Documents are kept in the app's own storage on the tablet. They are not synced or backed up by Android (backup is turned off), so export anything you want to keep elsewhere:
+Documents are kept in the app's own storage on the device. They are not synced or backed up by Android (backup is turned off), so export anything you want to keep elsewhere:
 - On the start screen, open a document's menu (⋯) and choose Export…, then pick a folder (Downloads, a USB drive, a cloud provider's folder). The document is saved in its own format (`.md`, or `.txt`).
 - Or, in the editor, use Menu → Export….
 
