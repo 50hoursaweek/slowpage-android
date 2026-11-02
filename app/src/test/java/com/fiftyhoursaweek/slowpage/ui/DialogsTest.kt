@@ -2,8 +2,12 @@ package com.fiftyhoursaweek.slowpage.ui
 
 import android.os.Looper
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -38,13 +42,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import uniffi.hushhour.Backdrop
-import uniffi.hushhour.FocusMode
 import uniffi.hushhour.FontChoice
-import uniffi.hushhour.ViewMode
-import uniffi.hushhour.focusLabel
-import uniffi.hushhour.fontLabel
-import uniffi.hushhour.themeLabel
-import uniffi.hushhour.viewLabel
 import uniffi.hushhour.MusicChoice
 import uniffi.hushhour.SoundSet
 import uniffi.hushhour.Theme
@@ -172,7 +170,7 @@ class DialogsTest {
         compose.onNodeWithTag("aboutWelcome").assertExists()
     }
 
-    @Test fun theEditorsMenuOpensTheDialogsAndHasNoSoundItemsOfItsOwn() {
+    @Test fun theEditorsMenuHasOnlyTheFileItemsUndoThePopUpsAndAbout() {
         vm.newDocument()
         until("a document") { vm.screen is Screen.Editor && vm.highlight != null }
         compose.setContent {
@@ -185,19 +183,16 @@ class DialogsTest {
         compose.waitForIdle()
         for (item in listOf("Appearance…", "Sound and music…", "Welcome…", "About Slowpage…")) compose.onNodeWithText(item).assertExists()
         for (gone in listOf("Import music…", "Music: Rain", "Typing sound")) compose.onAllNodes(hasText(gone, substring = true)).assertCountEquals(0)
-        // The iPad's order (EditorViewController.menuItems): Undo, Appearance, Theme, Font, View, Spotlight, Anchor, text size, Welcome.
-        // Unchecked items, by their whole text: the status line has "View: …", "Spotlight: …" and "Anchor: …" too.
-        val p = vm.preferences
-        val order = listOf(
-            "Undo", "Appearance…",
-            "Theme: " + themeLabel(Theme.entries.first { it != p.theme }),
-            "Font: " + fontLabel(FontChoice.entries.first { it != p.font }),
-            "View: " + viewLabel(ViewMode.entries.first { it != vm.viewMode }),
-            "Spotlight: " + focusLabel(FocusMode.entries.first { it != p.focus }),
-            "Anchor", "Larger text", "Welcome…",
+        // Exactly the file items, Undo and Redo, the two pop-ups, Welcome and About, in this order:
+        // theme, font, view, spotlight, anchor and text size live only in Appearance, on the
+        // status line and on the keyboard (Francesco's install test).
+        val items = compose.onAllNodes(hasAnyAncestor(isPopup()) and hasClickAction()).fetchSemanticsNodes()
+            .sortedBy { it.positionInRoot.y }
+            .map { node -> node.config[SemanticsProperties.Text].joinToString { it.text } }
+        assertEquals(
+            listOf("New", "Import…", "Export…", "Close", "Undo", "Redo", "Appearance…", "Sound and music…", "Welcome…", "About Slowpage…"),
+            items,
         )
-        val tops = order.map { compose.onNodeWithText(it).fetchSemanticsNode().positionInRoot.y }
-        assertEquals(order.joinToString(), tops, tops.sorted())
         compose.onNodeWithText("Sound and music…").performClick()
         compose.waitForIdle()
         assertEquals(Dialog.SOUND, vm.dialog)

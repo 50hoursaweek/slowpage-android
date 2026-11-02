@@ -57,7 +57,6 @@ import com.fiftyhoursaweek.slowpage.editor.ReaderList
 import com.fiftyhoursaweek.slowpage.preview.PreviewList
 import com.fiftyhoursaweek.slowpage.preview.PreviewLook
 import uniffi.hushhour.FocusMode
-import uniffi.hushhour.FontChoice
 import uniffi.hushhour.Theme
 import uniffi.hushhour.ViewMode
 import uniffi.hushhour.focusLabel
@@ -298,10 +297,9 @@ private fun TopLine(vm: ShellViewModel, name: String, status: String, onExport: 
 
 @Composable
 private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () -> Unit) {
-    val p = vm.preferences
     fun run(action: () -> Unit) = { vm.menuOpen = false; action() }
-    @Composable fun item(label: String, enabled: Boolean = true, checked: Boolean = false, action: () -> Unit) =
-        DropdownMenuItem(text = { Text(if (checked) "✓  $label" else label) }, onClick = run(action), enabled = enabled)
+    @Composable fun item(label: String, enabled: Boolean = true, action: () -> Unit) =
+        DropdownMenuItem(text = { Text(label) }, onClick = run(action), enabled = enabled)
     DropdownMenu(expanded = vm.menuOpen, onDismissRequest = { vm.menuOpen = false }) {
         item("New") { vm.command(Command.NEW) }
         item("Import…") { onImport() }
@@ -311,27 +309,11 @@ private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () ->
         item("Undo", enabled = vm.canUndo && !vm.editorBusy) { vm.command(Command.UNDO) }
         item("Redo", enabled = vm.canRedo && !vm.editorBusy) { vm.command(Command.REDO) }
         HorizontalDivider()
-        // The settings in their dialogs, as on the iPad (O5).
+        // The settings only in their pop-ups, as on the iPad (O5; Francesco's install test):
+        // theme, font, size and line height in Appearance, View, Spotlight and Anchor on the
+        // status line, and all of them on the keyboard shortcuts.
         item("Appearance…") { vm.showDialog(Dialog.APPEARANCE) }
         item("Sound and music…") { vm.showDialog(Dialog.SOUND) }
-        HorizontalDivider()
-        // Theme, Font, View, Spotlight, Anchor: the iPad's order (Codex phase 6 audit, MINOR).
-        for (theme in Theme.entries) item("Theme: ${themeLabel(theme)}", checked = theme == p.theme) {
-            vm.updatePreferences(vm.preferences.copy(theme = theme))
-        }
-        for (font in FontChoice.entries) item("Font: ${fontLabel(font)}", checked = font == p.font) {
-            vm.updatePreferences(vm.preferences.copy(font = font))
-        }
-        HorizontalDivider()
-        for (mode in ViewMode.entries) item("View: ${viewLabel(mode)}", enabled = vm.readOnly == null, checked = mode == vm.viewMode) { vm.setView(mode) }
-        HorizontalDivider()
-        for (focus in FocusMode.entries) item("Spotlight: ${focusLabel(focus)}", checked = focus == p.focus) {
-            vm.updatePreferences(vm.preferences.copy(focus = focus))
-        }
-        item("Anchor", checked = p.typewriter) { vm.command(Command.ANCHOR) }
-        HorizontalDivider()
-        item("Larger text") { vm.command(Command.ZOOM_IN) }
-        item("Smaller text") { vm.command(Command.ZOOM_OUT) }
         HorizontalDivider()
         item("Welcome…") { vm.showWelcome() }
         item("About Slowpage…") { vm.showDialog(Dialog.ABOUT) }
