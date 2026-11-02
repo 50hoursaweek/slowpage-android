@@ -1,35 +1,27 @@
 # Status
 
-## Done
-- Phases 5+6 audit: CLOSED-AGREED 2026-10-30 (`audit/phase-6/round-3-codex-verification.md`, line in `audit/LATEST.md`). Code b2566b7, APK 81ae33c3…. Rounds: `audit/phase-6/round-2-claude.md`, `round-3-claude.md`. Open MINOR: a damaged file with a valid header still imports (reported on first play).
-- Phases 5+6 merged (661c65b, APK ab61c0c0): Codex phase 5 round 1 fixes, the iPad's dialogs, welcome tour and background pattern; Francesco's run 7/7 PASS.
-- Phase 5 (audio), Francesco's run on APK 0b78f921: 7/7 PASS (`audit/phase-5/device-try-francesco.md`).
-- Phase 4 audit: CLOSED-AGREED 2026-10-30 (`audit/phase-4/round-3-codex-verification.md`, line in `audit/LATEST.md`). Code 36159ac, APK be304349….
-- Phase 4 editor (E1–E15, V1–V6, K1): `audit/phase-4/editor-choice.md`, emulator notes in `audit/phase-4/emulator/README.md`. Francesco's run: tests 1–8 PASS on the Huawei (`audit/phase-4/device-try-francesco.md`).
-- Phase 4 round 3 (Codex NEW-B1: no undo or redo in a read-only document; recovered text kept): `audit/phase-4/round-3-claude.md`. 126 JVM tests pass, lint 0 errors.
-- Phase 4 round 2 (Codex new BLOCKING: input during a relayout; BLOCKING 3 by ruling B: paragraph cap 100,000, read-only over it; MINOR 5 checked on API 28; MINOR 6 re-measured): `audit/phase-4/round-2-claude.md`, code 189f040. 125 JVM tests pass, lint 0 errors.
-- Phase 4 round 1 (Codex BLOCKING 1–3, MINOR 5–6, Francesco F1–F3): `audit/phase-4/round-1-claude.md`, code bddc7c7. Francesco's retest of APK 459a4688: PASS.
-- Gate A: closed (Francesco heard the music; CLOSED-AGREED 2026-10-29 in `audit/LATEST.md`).
-- Phase 3 audit: CLOSED-AGREED 2026-10-29 (`audit/phase-3/round-3-codex-verification.md`, line in `audit/LATEST.md`). Code 10be1d9, APK SHA-256 8ef890e0…. Accepted by Francesco (`audit/phase-3/ruling-large-drafts.md`): the large-draft cap as a known risk; the debug signing key is kept.
-- Phase 3 F1–F4: all PASS on the tablet (Francesco, 2026-10-29).
-- Phase 3 shell, first usable build (d744632), F1 first attempt (e38086c, not fixed on the tablet).
-- Emulator installed on `/Volumes/Expansion/hushhour-android-emulator` (sdk: emulator, platform-tools, AOSP arm64 API 31 image; AVD `slowpage-tablet` in `avd/`, 2000x1200, 240 dpi, landscape, no hardware keyboard; `user-home/` for ANDROID_USER_HOME).
+Detailed notes, audits and device runs are kept in the maintainer's local QA records (not in this repository).
 
-## In progress
-- Phase 7, release prep (handoff `audit/handoffs/2026-10-30-phase-7-release.md`, notes `audit/phase-7/notes.md`): LICENSE, THIRD-PARTY-NOTICES.md, README, release-notes draft, version 1.0.0 (code 4), launcher icon (the iPad's), release signing (key made by Francesco, cert SHA-256 B1:B8:E4:…:20:31:36).
-- 2026-11-01, Francesco's decisions:
-  - H1 and H5: the history is rewritten, with the noreply email and without `audit/`. `audit/` is now a local git repo of its own (`audit/phase-7/history-rewrite.md`).
-  - H6 (c): the iPad crate and the assets are vendored in `vendor/inkpad-ipados/` (`audit/phase-7/vendor-core.md`).
-  - The music credit now uses the agreed wording.
+## Done
+- Gate A: the Rust core built for Android, music heard on the tablet (2026-10-29).
+- Phase 3: the app shell, the first usable build. Audit closed 2026-10-29; all device tests passed on the tablet.
+- Phase 4: the editor (a TextView-based page with highlighting, spotlight, anchor, preview, keyboard shortcuts, large-document limits). Audit closed 2026-10-30; device tests passed on a Huawei tablet.
+- Phase 5: audio (music, soundscapes, imported tracks, lifecycle). Device run 7/7 pass.
+- Phase 6: the iPad's dialogs, welcome tour and background pattern. The phases 5+6 audit closed 2026-10-30. Known MINOR: a damaged music file with a valid header still imports; it is reported, and Music turns Off, on first play.
+- Phase 7: release prep.
+  - LICENSE, THIRD-PARTY-NOTICES.md, the README, version 1.0.0 (code 4), the launcher icon, release signing.
+  - The iPad crate and assets are vendored in `vendor/inkpad-ipados/`.
+  - The release APK is built from `be2114f`: SHA-256 `95b8cad754b32d8a1c29244884c04ced900d37c77012a61d6e0facdc2f153cfd`, certificate `B1:B8:E4:68:DB:42:16:C5:DD:4B:D9:81:01:4F:A3:2A:90:8A:D4:13:C6:3E:6B:DA:D5:D3:48:FE:C1:20:31:36`.
+  - Audit round 1: 0 BLOCKING; its MINOR documentation fixes are done after `be2114f`.
 
 ## Emulator
-- `/Volumes/Expansion/hushhour-android-emulator`. Start (stdin detached, ANDROID_HOME must point there too, the profile sets it to the old SDK):
-  `E=/Volumes/Expansion/hushhour-android-emulator; ANDROID_HOME=$E/sdk ANDROID_SDK_ROOT=$E/sdk ANDROID_AVD_HOME=$E/avd ANDROID_USER_HOME=$E/user-home nohup $E/sdk/emulator/emulator -avd slowpage-tablet -no-window -no-snapshot -no-audio -no-boot-anim -gpu swiftshader_indirect < /dev/null > log 2>&1 &`
-- Landscape is `user_rotation 0` (the display is landscape-natural).
-- Also an API 28 AVD, `slowpage-api28` (same command with `-avd slowpage-api28`), for the caret on 26–28. With 8 GiB of RAM, run one emulator at a time.
+- The SDK and the AVDs live on an external drive. Start an AVD, with stdin detached, and point every Android variable at that drive (`E` = its folder):
+  `ANDROID_HOME=$E/sdk ANDROID_SDK_ROOT=$E/sdk ANDROID_AVD_HOME=$E/avd ANDROID_USER_HOME=$E/user-home nohup $E/sdk/emulator/emulator -avd slowpage-tablet -no-window -no-snapshot -no-audio -no-boot-anim -gpu swiftshader_indirect < /dev/null > log 2>&1 &`
+- `slowpage-tablet`: AOSP arm64 API 31, 2000x1200, 240 dpi, landscape (`user_rotation 0`), no hardware keyboard.
+- `slowpage-api28`: the same command with `-avd slowpage-api28`, for the caret on API 26–28. With 8 GiB of RAM, run one emulator at a time.
 
 ## Blocked
 - Nothing.
 
 ## Next
-- PMO's Codex audit of phase 7, then Francesco's install test of the release APK (uninstall the debug build first).
+- Francesco's install test of the release APK (export documents, uninstall the test build, then install), then tag v1.0.0 at `be2114f` and publish. Both are Francesco's steps.

@@ -40,7 +40,7 @@ Two checks prove the file is the one released here and that it is signed with Sl
    ```
    b1b8e468db4216c5dd4bd981014fa32a908ad413c63e6bdad5d348fec1203136
    ```
-   The same fingerprint as `keytool -printcert -jarfile` shows it:
+   The same fingerprint, written with colons:
    `B1:B8:E4:68:DB:42:16:C5:DD:4B:D9:81:01:4F:A3:2A:90:8A:D4:13:C6:3E:6B:DA:D5:D3:48:FE:C1:20:31:36`
 
 Every Slowpage release is signed with this one certificate, and Android installs an update only if its signature matches.

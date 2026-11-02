@@ -1,7 +1,7 @@
 #!/bin/sh
 # Gate A evidence: a clean build of the .so, the bindings and the release APK, with the tool
-# versions and every check that audit/gate-a/evidence.md relies on, in one log.
-# Usage: scripts/gate-a-evidence.sh > audit/gate-a/build-evidence.log 2>&1
+# versions and the checks on the .so and the APK (alignment, exports, signing), in one log.
+# Usage: scripts/gate-a-evidence.sh > build-evidence.log 2>&1
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
