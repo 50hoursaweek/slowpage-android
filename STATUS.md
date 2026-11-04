@@ -8,7 +8,7 @@ Detailed notes, audits and device runs are kept in the maintainer's local QA rec
 - Phase 4: the editor (a TextView-based page with highlighting, spotlight, anchor, preview, keyboard shortcuts, large-document limits). Audit closed 2026-10-30; device tests passed on a Huawei tablet.
 - Phase 5: audio (music, soundscapes, imported tracks, lifecycle). Device run 7/7 pass.
 - Phase 6: the iPad's dialogs, welcome tour and background pattern. The phases 5+6 audit closed 2026-10-30. Known MINOR: a damaged music file with a valid header still imports; it is reported, and Music turns Off, on first play.
-- Phase 7: release prep.
+- Phase 7: release prep. Released as 1.0.0 on 2026-11-04.
   - LICENSE, THIRD-PARTY-NOTICES.md, the README, version 1.0.0 (code 4), the launcher icon, release signing.
   - The iPad crate and assets are vendored in `vendor/inkpad-ipados/`.
   - The release APK is built from `58f7cfd`: SHA-256 `aaf1d7402ad4932cf28e994499375fe4634f1440b01a6d910bba4712bad637a0`, certificate `B1:B8:E4:68:DB:42:16:C5:DD:4B:D9:81:01:4F:A3:2A:90:8A:D4:13:C6:3E:6B:DA:D5:D3:48:FE:C1:20:31:36`.
@@ -31,4 +31,4 @@ Detailed notes, audits and device runs are kept in the maintainer's local QA rec
 - Blocking notifications while writing (Do Not Disturb), as an opt-in. It needs the notification-policy access the user grants in system settings, so it is to be designed first (Francesco, 2026-11-02).
 
 ## Next
-- Francesco's install test of the release APK (export documents, uninstall the test build, then install), then tag v1.0.0 at `58f7cfd` and publish. Both are Francesco's steps.
+- Nothing. Slowpage for Android 1.0.0 was released on 2026-11-04: tag v1.0.0 at `58f7cfd`, APK `slowpage-1.0.0.apk` with SHA-256 `aaf1d7402ad4932cf28e994499375fe4634f1440b01a6d910bba4712bad637a0`.
