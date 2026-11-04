@@ -27,7 +27,7 @@ The background-pattern shader (`app/src/main/java/.../editor/Backdrop.kt`) is a 
 | Asset | Licence | Origin |
 |---|---|---|
 | Typing sounds, two sets (built into the core; `vendor/inkpad-ipados/HushHourCore/assets/sounds`) | CC0 1.0 | Cut from "Keyboard Soundpack #1" by unicaegames, OpenGameArt: https://opengameart.org/content/keyboard-soundpack-1-typing-and-single-keystrokes |
-| Six music loops (`Late cafe`, `Lofi desk`, `Low strings`, `Nylon strings`, `Slow horizon`, `Wordless`) | CC0 1.0 | Music loops generated with Google Lyria 3 (AI, SynthID watermark). Dedicated to the public domain under CC0, to the extent any rights exist. From the HushHour repository; `vendor/inkpad-ipados/HushHour/HushHour/Resources/Music` |
+| Six music loops (`Late cafe`, `Lofi desk`, `Low strings`, `Nylon strings`, `Slow horizon`, `Wordless`) | CC0 1.0 | Music loops generated with Google Lyria 3 (AI, SynthID watermark). Dedicated to the public domain under CC0, to the extent any rights exist. From the Linux app's repository (HushHour); `vendor/inkpad-ipados/HushHour/HushHour/Resources/Music` |
 | Soundscapes | MIT | Synthesised in code by hushhour-core |
 
 ## Images

@@ -1,6 +1,6 @@
 # Slowpage for Android
 
-Slowpage is a quiet, distraction-free Markdown editor for phones and tablets. This is the Android port. The same app exists for Linux ([HushHour](https://github.com/50hoursaweek/hushhour)) and iPad (Slowpage for iPadOS), and all three share one Rust core, `hushhour-core`.
+Slowpage is a quiet, distraction-free Markdown editor for phones and tablets. This is the Android port. The same app exists for Linux ([Slowpage for Linux](https://github.com/50hoursaweek/hushhour/releases/latest)) and iPad (Slowpage for iPadOS), and all three share one Rust core, `hushhour-core`.
 
 - The page fills the screen.
 - A spotlight dims everything but the paragraph or sentence you are writing.
@@ -77,7 +77,7 @@ Toolchain:
 
 Everything the build needs is in this repository, or public:
 - **The iPad app's Rust crate (`hushhour-ipad`) and the bundled assets** are vendored in `vendor/inkpad-ipados/`, unmodified. The assets are the fonts, music loops, typing sounds, licence texts and icon art. `vendor/inkpad-ipados/VENDORED.md` lists the source commit, every file with its licence and checksum, and how they are re-synced.
-- **`hushhour-core`** comes from the public [HushHour](https://github.com/50hoursaweek/hushhour) repository, at tag v0.4.2. Cargo fetches it, as `Cargo.lock` pins it.
+- **`hushhour-core`** comes from the Linux app's public repository, [HushHour](https://github.com/50hoursaweek/hushhour), at tag v0.4.2. Cargo fetches it, as `Cargo.lock` pins it.
 - **Rust crates** come from crates.io.
 
 The script builds:
