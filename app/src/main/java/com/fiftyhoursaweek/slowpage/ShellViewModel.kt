@@ -81,6 +81,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     private val store = app.store
     private val recentList = app.recents
     private val recovery = app.recovery
+    private val journal = app.renameJournal
     private val io = Dispatchers.IO.limitedParallelism(1)
 
     var screen by mutableStateOf<Screen>(Screen.Start)
@@ -214,6 +215,8 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             preferences = withContext(io) {
                 store.removeLeftovers()
                 recovery.removeLeftovers()
+                // Before anything lists or opens: a rename the process did not finish.
+                journal.recover(store, recovery, recentList)
                 StateFile.read(app.preferencesFile)?.let { parsePreferences(it.toString(Charsets.UTF_8)) }
                     ?: defaultPreferences()
             }
@@ -396,28 +399,35 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
         viewModelScope.launch {
             var leftBehind = false
             val result = withContext(io) {
-                runCatching {
-                    // Recent follows in the same step on the store's lane, written there too: a
-                    // refresh in between would drop the old name, its file gone, and an end of
-                    // the process before the main thread runs again would leave the old name.
-                    val move = { old: String ->
-                        store.rename(old, new)
-                        if (!recovery.rename(old, new)) {
-                            // Kept unsaved text that cannot follow: the document goes back, so
-                            // the two stay together (Codex rename round 1, BLOCKING 2).
-                            val back = runCatching { store.rename(new, old) }
-                            if (back.isSuccess) throw StoreError.Io(IOException(KEPT_CANNOT_FOLLOW))
-                            leftBehind = true  // as the iPad: renamed, the copy stays, nothing deleted
+                try {
+                    runCatching {
+                        // Recent follows in the same step on the store's lane, written there too: a
+                        // refresh in between would drop the old name, its file gone, and an end of
+                        // the process before the main thread runs again would leave the old name.
+                        val move = { old: String ->
+                            // On disk before anything moves, until Recent is written too: a process
+                            // that ends in between finishes the rename at the next start.
+                            journal.begin(old, new)
+                            store.rename(old, new)
+                            if (!recovery.rename(old, new)) {
+                                // Kept unsaved text that cannot follow: the document goes back, so
+                                // the two stay together (Codex rename round 1, BLOCKING 2).
+                                val back = runCatching { store.rename(new, old) }
+                                if (back.isSuccess) throw StoreError.Io(IOException(KEPT_CANNOT_FOLLOW))
+                                leftBehind = true  // as the iPad: renamed, the copy stays, nothing deleted
+                            }
+                            recentList.renamed(old, new)
                         }
-                        recentList.renamed(old, new)
+                        val notSaved = if (s == null) {
+                            move(name)
+                            null
+                        } else {
+                            s.rename(new, move)?.also { keepFiles(s, it) }
+                        }
+                        notSaved to recentList.persist()
                     }
-                    val notSaved = if (s == null) {
-                        move(name)
-                        null
-                    } else {
-                        s.rename(new, move)?.also { keepFiles(s, it) }
-                    }
-                    notSaved to recentList.persist()
+                } finally {
+                    journal.end()
                 }
             }
             if (s != null) {
@@ -456,9 +466,10 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     private suspend fun reopenName(): String? {
         val open = saved.get<String>(OPEN_KEY) ?: return null
         val from = saved.get<String>(RENAMED_FROM_KEY) ?: return open
-        saved.remove<String>(RENAMED_FROM_KEY)
         val name = withContext(io) { if (!store.exists(open) && store.exists(from)) from else open }
+        // Only now, the name settled: the state saved meanwhile still has both (Codex rename round 2, BLOCKING 1).
         saved[OPEN_KEY] = name
+        saved.remove<String>(RENAMED_FROM_KEY)
         return name
     }
 

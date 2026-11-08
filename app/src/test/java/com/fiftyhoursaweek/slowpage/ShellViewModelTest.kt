@@ -806,6 +806,40 @@ class ShellViewModelTest {
         until("opens with the kept text") { vm.screen == Screen.Editor("a.md") && vm.editorText() == "kept" }
     }
 
+    /**
+     * The process ended between the document's move and its kept text's (Codex rename round 2,
+     * BLOCKING 2): the next start finishes the rename, and the newer kept text opens with it.
+     */
+    @Test fun aRenameCutShortAfterTheDocumentMovedIsFinishedAtTheNextStart() {
+        app.store.write("Old.md", "on disk")
+        assertNull(app.recovery.write("Old.md", "kept", stamp = System.currentTimeMillis() + 60_000))
+        app.recents.add("Old.md")
+        app.recents.persist()
+        app.renameJournal.begin("Old.md", "New.md")
+        app.store.rename("Old.md", "New.md")
+
+        val vm = create(SavedStateHandle())
+        until("Recent names the new name") { vm.recent == listOf("New.md") }
+        assertFalse(File(app.filesDir, "rename").exists())
+        assertFalse(app.recovery.has("Old.md"))
+        vm.open("New.md")
+        until("opens with the kept text") { vm.screen == Screen.Editor("New.md") && vm.editorText() == "kept" }
+    }
+
+    /** No rename leaves its journal behind, done or refused. */
+    @Test fun aFinishedOrRefusedRenameLeavesNoJournal() {
+        val vm = create(SavedStateHandle())
+        settle()
+        app.store.write("a.md", "a")
+        app.store.write("b.md", "b")
+        vm.rename("a.md", "c")
+        until("renamed") { vm.documents.any { it.name == "c.md" } }
+        assertFalse(File(app.filesDir, "rename").exists())
+        vm.rename("c.md", "b")
+        until("refused") { vm.notice != null }
+        assertFalse(File(app.filesDir, "rename").exists())
+    }
+
     private fun create(handle: SavedStateHandle): ShellViewModel {
         val store = ViewModelStore().also { stores += it }
         val factory = object : ViewModelProvider.Factory {
