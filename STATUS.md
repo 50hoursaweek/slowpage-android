@@ -16,6 +16,10 @@ Detailed notes, audits and device runs are kept in the maintainer's local QA rec
   - The editor Menu keeps only the file items, Undo and Redo, the Appearance and Sound and music pop-ups, Welcome and About (Francesco's install test).
   - Full screen on every screen and in every dialog and menu: the status and navigation bars are hidden, and a swipe from an edge shows them for a moment (Francesco).
   - Phones and tablets (Francesco's phone test): the status line scrolls sideways with ‹ and › on a narrow screen; the dialog title bars, the tour titles and the top line fit at 360 dp. The manifest declares normal (phone), large and xlarge screens.
+- 1.0.1, released 2026-11-08: version 1.0.1 (code 5).
+  - Rename… in the start screen's ⋯ menu and the document menu, with the iPad's naming rules. A rename moves the document, its recovery copy and its Recent entry; a rename cut short by a crash is settled at the next start, and no kept text is deleted. Audit closed by Vibe's verdict.
+  - Device-to-device transfer leaves documents out, as backup already did.
+  - The release APK is built from `3390f2b`: SHA-256 `039198b4216e87e1cc52f899051873c2144467263b263aad6ab3ae7b59415467`, the same certificate. It installs over 1.0.0 and keeps the documents.
 
 ## Emulator
 - The SDK and the AVDs live on an external drive. Start an AVD, with stdin detached, and point every Android variable at that drive (`E` = its folder):
@@ -31,4 +35,4 @@ Detailed notes, audits and device runs are kept in the maintainer's local QA rec
 - Blocking notifications while writing (Do Not Disturb), as an opt-in. It needs the notification-policy access the user grants in system settings, so it is to be designed first (Francesco, 2026-11-02).
 
 ## Next
-- Nothing. Slowpage for Android 1.0.0 was released on 2026-11-04: tag v1.0.0 at `58f7cfd`, APK `slowpage-1.0.0.apk` with SHA-256 `aaf1d7402ad4932cf28e994499375fe4634f1440b01a6d910bba4712bad637a0`.
+- Nothing. Slowpage for Android 1.0.1 was released on 2026-11-08: tag v1.0.1 at `3390f2b`, APK `slowpage-1.0.1.apk` with SHA-256 `039198b4216e87e1cc52f899051873c2144467263b263aad6ab3ae7b59415467`.
