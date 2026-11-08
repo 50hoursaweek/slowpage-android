@@ -19,7 +19,7 @@ Requirements:
 - About 50 MB of free space (28 MB installed, plus 17 MB of music loops once one is played).
 
 Steps:
-1. Download `slowpage-1.0.0.apk` from Releases.
+1. Download `slowpage-1.0.1.apk` from Releases.
 2. Optional: check it (see Verify below).
 3. Open it on the phone or tablet. Android asks to allow installs from that source (the browser or Files app): allow it in the prompt, or in Settings → Apps → Special app access → Install unknown apps.
 4. Install, then open Slowpage. A short welcome tour shows on first launch.
@@ -27,18 +27,18 @@ Steps:
 ### Verify the APK
 Two checks prove the file is the one released here and that it is signed with Slowpage's release key.
 
-1. Compare the APK's SHA-256 with the one listed in the release notes. For 1.0.0, built from commit `58f7cfde2b3e080345144ef2e047f9f316213e2b`, it is:
+1. Compare the APK's SHA-256 with the one listed in the release notes. For 1.0.1, built from commit `3390f2bc86ceeea3099cdc92e25544c83da18999`, it is:
    ```
-   aaf1d7402ad4932cf28e994499375fe4634f1440b01a6d910bba4712bad637a0
+   039198b4216e87e1cc52f899051873c2144467263b263aad6ab3ae7b59415467
    ```
    To compute it:
    ```
-   shasum -a 256 slowpage-1.0.0.apk        # macOS / Linux
-   certutil -hashfile slowpage-1.0.0.apk SHA256   # Windows
+   shasum -a 256 slowpage-1.0.1.apk        # macOS / Linux
+   certutil -hashfile slowpage-1.0.1.apk SHA256   # Windows
    ```
 2. Check the signing certificate (`apksigner` comes with the Android SDK build tools):
    ```
-   apksigner verify --print-certs slowpage-1.0.0.apk
+   apksigner verify --print-certs slowpage-1.0.1.apk
    ```
    The signer must be `CN=Slowpage, O=Grunt`, and the SHA-256 digest must be:
    ```
