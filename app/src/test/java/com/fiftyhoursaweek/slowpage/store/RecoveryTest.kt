@@ -1,7 +1,9 @@
 package com.fiftyhoursaweek.slowpage.store
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -49,7 +51,26 @@ class RecoveryTest {
         r.rename("old.md", "new.md")
         assertEquals(Kept("kept", 7), r.read("new.md"))
         assertNull(r.read("old.md"))
-        r.rename("none.md", "other.md")  // nothing kept: nothing to do
+        assertTrue(r.rename("none.md", "other.md"))  // nothing kept: nothing to do
         assertNull(r.read("other.md"))
+    }
+
+    /** A change of case keeps the copy, on a disk that ignores case too (Codex rename round 1, BLOCKING 2). */
+    @Test fun aChangeOfCaseKeepsTheCopy() {
+        val r = recovery
+        assertNull(r.write("draft.md", "kept", stamp = 7))
+        assertTrue(r.rename("draft.md", "Draft.md"))
+        assertEquals(Kept("kept", 7), r.read("Draft.md"))
+        assertEquals(listOf("Draft.md"), r.folder.list()!!.toList())
+    }
+
+    /** A copy that cannot follow stays where it was and is never deleted (Codex rename round 1, BLOCKING 2). */
+    @Test fun aCopyThatCannotFollowStaysUnderTheOldName() {
+        val r = recovery
+        assertNull(r.write("old.md", "kept", stamp = 7))
+        // Something the copy cannot replace: a folder that is not empty.
+        File(r.folder, "new.md/inside").apply { parentFile!!.mkdirs(); writeText("x") }
+        assertFalse(r.rename("old.md", "new.md"))
+        assertEquals(Kept("kept", 7), r.read("old.md"))
     }
 }

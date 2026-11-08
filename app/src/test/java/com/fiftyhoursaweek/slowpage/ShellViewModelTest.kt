@@ -689,6 +689,7 @@ class ShellViewModelTest {
             "a:b" to "A name cannot contain “/” or “:”.",
             ".hidden" to "A name cannot start with a dot.",
             "x".repeat(260) to "The name is too long.",
+            "a\tb" to "A name cannot contain a line break, a tab or another control character.",
             "Taken" to "A document named “Taken” already exists here.",
             "Taken.md" to "A document named “Taken” already exists here.",
         )
@@ -749,6 +750,60 @@ class ShellViewModelTest {
         assertEquals("Couldn't rename a: A document named “c” already exists here.", vm.notice)
         assertEquals("a.md", app.store.read("a.md"))
         assertEquals("c.md", app.store.read("c.md"))
+    }
+
+    /** The iPad's setEditingLocked: what is saved before the move is all there is (Codex rename round 1, BLOCKING 1). */
+    @Test fun nothingCanBeTypedOrUndoneWhileTheOpenDocumentIsRenamed() {
+        val handle = SavedStateHandle()
+        val vm = create(handle)
+        val name = openNew(vm)
+        assertTrue(vm.accept("Before"))
+        vm.rename(name, "Letter")
+        assertTrue(vm.renaming)  // from the moment it is asked, before any work
+        assertFalse(vm.accept("During"))
+        vm.command(Command.UNDO)
+        assertEquals("Before", vm.editorText())
+        assertEquals("Letter.md", handle.get<String>("open"))
+        assertEquals(name, handle.get<String>("renamedFrom"))
+        until("renamed") { vm.screen == Screen.Editor("Letter.md") }
+        assertFalse(vm.renaming)
+        assertNull(handle.get<String>("renamedFrom"))
+        assertEquals("Before", app.store.read("Letter.md"))
+        assertTrue(vm.accept("After"))
+    }
+
+    /** Process death in the middle of a rename reopens the name the file has (Codex rename round 1, BLOCKING 1). */
+    @Test fun anEndInTheMiddleOfARenameReopensTheNameThatExists() {
+        app.store.write("Old.md", "words")
+        val before = create(SavedStateHandle(mapOf("open" to "New.md", "renamedFrom" to "Old.md")))
+        until("the old name, the move not done") { before.screen == Screen.Editor("Old.md") }
+        before.closeEditor()
+        until("closed") { before.screen == Screen.Start }
+
+        app.store.rename("Old.md", "New.md")
+        val after = create(SavedStateHandle(mapOf("open" to "New.md", "renamedFrom" to "Old.md")))
+        until("the new name, the move done") { after.screen == Screen.Editor("New.md") }
+        assertEquals("words", after.editorText())
+    }
+
+    /** Kept unsaved text that cannot follow: the document goes back, nothing is lost (Codex rename round 1, BLOCKING 2). */
+    @Test fun whenTheKeptTextCannotFollowTheDocumentStaysUnderItsName() {
+        val vm = create(SavedStateHandle())
+        settle()
+        app.store.write("a.md", "on disk")
+        app.recents.add("a.md")
+        assertNull(app.recovery.write("a.md", "kept", stamp = System.currentTimeMillis() + 60_000))
+        // Something the kept copy cannot replace: a folder that is not empty.
+        File(app.recovery.folder, "b.md/inside").apply { parentFile!!.mkdirs(); writeText("x") }
+        vm.rename("a.md", "b")
+        until("refused") { vm.notice != null }
+        assertEquals("Couldn't rename a: Its kept unsaved text could not follow the new name, so nothing was moved.", vm.notice)
+        assertEquals("on disk", app.store.read("a.md"))
+        assertFalse(app.store.exists("b.md"))
+        assertEquals("kept", app.recovery.read("a.md")?.text)
+        until("still in Recent") { vm.recent == listOf("a.md") }
+        vm.open("a.md")
+        until("opens with the kept text") { vm.screen == Screen.Editor("a.md") && vm.editorText() == "kept" }
     }
 
     private fun create(handle: SavedStateHandle): ShellViewModel {

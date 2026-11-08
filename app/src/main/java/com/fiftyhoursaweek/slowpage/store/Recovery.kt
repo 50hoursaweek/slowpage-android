@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
@@ -56,13 +57,29 @@ class Recovery(val folder: File, private val limitBytes: Long) {
     fun has(name: String) = file(name).isFile
 
     /**
-     * The document [old] is [new] now (R1): its kept text follows it. A copy under [new] has no
-     * document (a rename never goes over one), so it is dropped first. Best effort, as [clear].
+     * The document [old] is becoming [new] (R1): its kept text follows it. False when there is a
+     * copy and it could not follow; it is then still under [old], as it was (never deleted: it
+     * may be the only copy of unsaved text, Codex rename round 1, BLOCKING 2). A copy under
+     * [new] has no document (a rename never goes over one), so it is stale and dropped first,
+     * unless it is the same file, a change of case on a disk that ignores case.
      */
-    fun rename(old: String, new: String) {
-        if (new == old) return
-        file(new).delete()
-        if (has(old)) file(old).renameTo(file(new))
+    fun rename(old: String, new: String): Boolean {
+        if (new == old) return true
+        val from = file(old)
+        val to = file(new)
+        return try {
+            val same = from.exists() && to.exists() && Files.isSameFile(from.toPath(), to.toPath())
+            when {
+                same -> from.renameTo(to)
+                else -> {
+                    Files.deleteIfExists(to.toPath())
+                    if (from.isFile) Files.move(from.toPath(), to.toPath())
+                    true
+                }
+            }
+        } catch (_: IOException) {
+            false
+        }
     }
 
     /** Remove temporary files a killed write left behind (Codex round 2, MINOR 2). */

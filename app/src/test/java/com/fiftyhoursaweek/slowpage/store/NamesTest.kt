@@ -31,6 +31,13 @@ class NamesTest {
         assertEquals("x".repeat(252) + ".md", Names.validated("x".repeat(252)))
     }
 
+    /** Recent keeps one name per line: a pasted line break or tab is refused (Codex rename round 1, MINOR 3). */
+    @Test fun aControlCharacterIsRefused() {
+        for (input in listOf("a\nb", "a\tb", "a\rb", "a\u0000b", "a\u007Fb")) {
+            assertEquals(input, NameProblem.CONTROL_CHARACTER, refused(input))
+        }
+    }
+
     @Test fun importNamesKeepTextExtensionsAndMakeTheRestAcceptable() {
         assertEquals("Draft" to "md", Names.forImport("Draft.md"))
         assertEquals("notes" to "txt", Names.forImport("notes.txt"))

@@ -6,6 +6,8 @@ enum class NameProblem(val message: String) {
     INVALID_CHARACTER("A name cannot contain “/” or “:”."),
     LEADING_DOT("A name cannot start with a dot."),
     TOO_LONG("The name is too long."),
+    /** Not the iPad's: Recent keeps one name per line (Codex rename round 1, MINOR 3). */
+    CONTROL_CHARACTER("A name cannot contain a line break, a tab or another control character."),
 }
 
 class NameException(val problem: NameProblem) : Exception(problem.message)
@@ -17,7 +19,8 @@ object Names {
     /**
      * The file name for [input], with [ext] kept and not doubled if typed (R1, ported from
      * `DocumentRename.validatedName`): trimmed; refuses empty, `/`, `:`, a leading dot and
-     * more than 255 bytes. A NUL is refused with `/`, since no file system takes it.
+     * more than 255 bytes. Control characters (a pasted line break or tab; NUL) are refused
+     * too: Recent keeps one name per line, and no file system takes a NUL.
      */
     fun validated(input: String, ext: String = EXTENSION): String {
         var base = input.trim()
@@ -25,7 +28,8 @@ object Names {
             base = base.dropLast(ext.length + 1).trim()
         }
         if (base.isEmpty()) throw NameException(NameProblem.EMPTY)
-        if ('/' in base || ':' in base || '\u0000' in base) throw NameException(NameProblem.INVALID_CHARACTER)
+        if ('/' in base || ':' in base) throw NameException(NameProblem.INVALID_CHARACTER)
+        if (base.any { it.isISOControl() }) throw NameException(NameProblem.CONTROL_CHARACTER)
         if (base.startsWith(".")) throw NameException(NameProblem.LEADING_DOT)
         val name = if (ext.isEmpty()) base else "$base.$ext"
         if (name.toByteArray(Charsets.UTF_8).size > MAX_BYTES) throw NameException(NameProblem.TOO_LONG)

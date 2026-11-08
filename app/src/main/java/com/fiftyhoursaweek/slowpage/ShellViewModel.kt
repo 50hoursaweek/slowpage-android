@@ -182,6 +182,9 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     /** Read-only while a close is writing the text (D4); editable again if the close fails. */
     var closing by mutableStateOf(false)
         private set
+    /** Rename… is saving and moving the open document: read-only meanwhile, as the iPad (Codex rename round 1). */
+    var renaming by mutableStateOf(false)
+        private set
     /** A long text is going into the editor: input, undo and redo wait, and the screen says so (round 2). */
     var editorBusy by mutableStateOf(false)
         private set
@@ -221,7 +224,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             audio.preferencesChanged(preferences)
             refreshMusicChoices()
             refresh()
-            val reopen = saved.get<String>(OPEN_KEY)
+            val reopen = reopenName()
             // First launch: the welcome tour, once (Francesco, 2026-10-14). The flag is claimed
             // when it shows, so a later launch never shows it again.
             if (preferences.showWelcome && reopen == null && showWelcome()) {
@@ -378,45 +381,85 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
             return
         }
         if (new == name) return
-        if (s != null && closing) {
+        if (s != null && (closing || renaming || readOnly != null)) {
             notice = "$failed The document cannot be renamed right now."
             return
         }
+        if (s != null) {
+            // The iPad's setEditingLocked (Codex rename round 1, BLOCKING 1): nothing is typed
+            // between the save and the move, so the text is on disk under whichever name the
+            // file has. Process death meanwhile reopens the name that exists ([reopenName]).
+            renaming = true
+            saved[RENAMED_FROM_KEY] = name
+            saved[OPEN_KEY] = new
+        }
         viewModelScope.launch {
+            var leftBehind = false
             val result = withContext(io) {
                 runCatching {
-                    // Recent follows in the same step on the store's lane: a refresh in between
-                    // would drop the old name, its file gone, and leave no entry to rename.
+                    // Recent follows in the same step on the store's lane, written there too: a
+                    // refresh in between would drop the old name, its file gone, and an end of
+                    // the process before the main thread runs again would leave the old name.
                     val move = { old: String ->
                         store.rename(old, new)
-                        recovery.rename(old, new)
+                        if (!recovery.rename(old, new)) {
+                            // Kept unsaved text that cannot follow: the document goes back, so
+                            // the two stay together (Codex rename round 1, BLOCKING 2).
+                            val back = runCatching { store.rename(new, old) }
+                            if (back.isSuccess) throw StoreError.Io(IOException(KEPT_CANNOT_FOLLOW))
+                            leftBehind = true  // as the iPad: renamed, the copy stays, nothing deleted
+                        }
                         recentList.renamed(old, new)
                     }
-                    if (s == null) {
+                    val notSaved = if (s == null) {
                         move(name)
                         null
                     } else {
                         s.rename(new, move)?.also { keepFiles(s, it) }
                     }
+                    notSaved to recentList.persist()
                 }
             }
+            if (s != null) {
+                renaming = false
+                saved.remove<String>(RENAMED_FROM_KEY)
+            }
             val refused = result.fold(
-                onSuccess = { notSaved -> notSaved?.let { "The text could not be saved first: ${it.reason}" } },
+                onSuccess = { (notSaved, _) -> notSaved?.let { "The text could not be saved first: ${it.reason}" } },
                 onFailure = ::describe,
             )
             if (refused != null) {
-                if (s != null) updateStatus()
+                if (s != null && session === s) {
+                    saved[OPEN_KEY] = name
+                    updateStatus()
+                }
                 notice = "$failed $refused"
                 refresh()
                 return@launch
             }
+            app.problems.report(StateProblems.Kind.RECENTS, result.getOrNull()?.second)
+            val note = if (leftBehind) " $KEPT_LEFT_BEHIND" else ""
             if (s != null && session === s) {
                 screen = Screen.Editor(new)
-                saved[OPEN_KEY] = new
-                notice = "Renamed to ${Names.split(new).first}"
+                notice = "Renamed to ${Names.split(new).first}$note"
+            } else if (leftBehind) {
+                notice = "Renamed ${Names.split(name).first} to ${Names.split(new).first}.$note"
             }
-            persistRecents()
+            refresh()
         }
+    }
+
+    /**
+     * The document to reopen after process death: [OPEN_KEY], or, if that file is not there,
+     * the name a rename was moving it from (it ended before the move, or the move failed).
+     */
+    private suspend fun reopenName(): String? {
+        val open = saved.get<String>(OPEN_KEY) ?: return null
+        val from = saved.get<String>(RENAMED_FROM_KEY) ?: return open
+        saved.remove<String>(RENAMED_FROM_KEY)
+        val name = withContext(io) { if (!store.exists(open) && store.exists(from)) from else open }
+        saved[OPEN_KEY] = name
+        return name
     }
 
     fun import(resolver: ContentResolver, uri: Uri) {
@@ -486,7 +529,8 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
     val host = object : EditorHost {
         override fun fits(start: Int, end: Int, insert: String): Boolean {
             val s = session ?: return false
-            if (closing || readOnly != null) return false  // read-only while a close writes the text (D4)
+            // Read-only while a close writes the text (D4), or a rename saves and moves it.
+            if (closing || renaming || readOnly != null) return false
             // A paragraph over the cap could not be edited smoothly (ruling B): refused, as at the limit.
             val lines = highlight?.lines
             if (lines != null && Paragraphs.longestAfter(lines, start, end, insert) > Paragraphs.CAP) {
@@ -622,7 +666,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
      * opened with recovered text has that recovery in its history, and an undo would change the
      * hidden core and save the older text over the recovered one.
      */
-    private fun historyOpen() = !closing && !editorBusy && readOnly == null
+    private fun historyOpen() = !closing && !renaming && !editorBusy && readOnly == null
 
     /** One point larger or smaller, within the core's limits (E3). */
     private fun zoom(step: Float) {
@@ -1002,6 +1046,11 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
 
     companion object {
         private const val OPEN_KEY = "open"
+        /** The open document's name before a rename that has not finished. */
+        private const val RENAMED_FROM_KEY = "renamedFrom"
+        private const val KEPT_CANNOT_FOLLOW = "Its kept unsaved text could not follow the new name, so nothing was moved."
+        /** The iPad's leftBehindNote. */
+        private const val KEPT_LEFT_BEHIND = "Its kept unsaved text could not follow the new name; nothing was deleted."
         private const val DRAFT_KEY = "draft"
         private const val CARET_KEY = "caret"
         /** Gzipped; prose packs about 3:1, so roughly 750 KB of text. */
