@@ -815,7 +815,7 @@ class ShellViewModelTest {
         assertNull(app.recovery.write("Old.md", "kept", stamp = System.currentTimeMillis() + 60_000))
         app.recents.add("Old.md")
         app.recents.persist()
-        app.renameJournal.begin("Old.md", "New.md")
+        app.renameJournal.begin("Old.md", "New.md", app.store.file("Old.md").lastModified())
         app.store.rename("Old.md", "New.md")
 
         val vm = create(SavedStateHandle())

@@ -82,6 +82,17 @@ class Recovery(val folder: File, private val limitBytes: Long) {
         }
     }
 
+    /**
+     * Move the copy for [old] to [new] only if [new] has none; never deletes or replaces
+     * anything (a rename finished at start, [RenameJournal.recover]). False when it did not move.
+     */
+    fun moveIfAbsent(old: String, new: String): Boolean = try {
+        Files.move(file(old).toPath(), file(new).toPath())  // no REPLACE_EXISTING
+        true
+    } catch (_: IOException) {
+        false
+    }
+
     /** Remove temporary files a killed write left behind (Codex round 2, MINOR 2). */
     fun removeLeftovers() {
         folder.listFiles().orEmpty()

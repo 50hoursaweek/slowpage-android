@@ -216,7 +216,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
                 store.removeLeftovers()
                 recovery.removeLeftovers()
                 // Before anything lists or opens: a rename the process did not finish.
-                journal.recover(store, recovery, recentList)
+                journal.recover(store, recovery, recentList)?.let { app.problems.report(StateProblems.Kind.RECENTS, it) }
                 StateFile.read(app.preferencesFile)?.let { parsePreferences(it.toString(Charsets.UTF_8)) }
                     ?: defaultPreferences()
             }
@@ -407,7 +407,11 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
                         val move = { old: String ->
                             // On disk before anything moves, until Recent is written too: a process
                             // that ends in between finishes the rename at the next start.
-                            journal.begin(old, new)
+                            // A copy under the new name has no document (a rename never goes
+                            // over one): stale, dropped before the journal, so a start that
+                            // finishes this rename never finds two (Codex rename round 3).
+                            if (!store.exists(new)) recovery.clear(new)
+                            journal.begin(old, new, store.file(old).lastModified())
                             store.rename(old, new)
                             if (!recovery.rename(old, new)) {
                                 // Kept unsaved text that cannot follow: the document goes back, so
