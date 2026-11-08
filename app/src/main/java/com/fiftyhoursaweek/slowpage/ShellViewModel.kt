@@ -411,7 +411,7 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
                             // over one): stale, dropped before the journal, so a start that
                             // finishes this rename never finds two (Codex rename round 3).
                             if (!store.exists(new)) recovery.clear(new)
-                            journal.begin(old, new, store.file(old).lastModified())
+                            journal.begin(old, new, store.file(old))
                             store.rename(old, new)
                             if (!recovery.rename(old, new)) {
                                 // Kept unsaved text that cannot follow: the document goes back, so

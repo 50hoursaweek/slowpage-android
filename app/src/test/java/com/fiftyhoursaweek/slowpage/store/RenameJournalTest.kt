@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -30,7 +31,7 @@ class RenameJournalTest {
         store.write("Old.md", "on disk")
         assertNull(recovery.write("Old.md", "kept", stamp = 7))
         recents("a.md", "Old.md")
-        journal.begin("Old.md", "New.md", store.file("Old.md").lastModified())
+        journal.begin("Old.md", "New.md", store.file("Old.md"))
     }
 
     /** Recover twice, as two starts would: the second changes nothing. */
@@ -140,9 +141,55 @@ class RenameJournalTest {
             assertNull(journal.recover(store, recovery, Recents(recentsFile)))
             assertFalse(content, journalFile.exists())
         }
-        journal.begin("Old.md", "New.md", 12)
+        journalFile.writeText("$h\nOld.md\nNew.md\n12\n")
         assertEquals(RenameJournal.Entry("Old.md", "New.md", 12), journal.read())
-        journal.end()
-        assertNull(journal.read())
+    }
+
+    /** Vibe, NEW-B3: a journal that cannot be read is not damaged; it stays, and nothing changes. */
+    @Test fun aJournalThatCannotBeReadStaysAndNothingChanges() {
+        begun()
+        store.rename("Old.md", "New.md")
+        journalFile.setReadable(false)
+        try {
+            assertNull(journal.recover(store, recovery, Recents(recentsFile)))
+            assertTrue(journalFile.exists())
+            assertEquals(Kept("kept", 7), recovery.read("Old.md"))
+            assertEquals(listOf("a.md", "Old.md"), Recents(recentsFile).names())
+        } finally {
+            journalFile.setReadable(true)
+        }
+        recoverTwice()
+        assertFinished()
+    }
+
+    /** Vibe, NEW-B3: a document whose attributes cannot be read is not "not moved"; the journal stays. */
+    @Test fun aDocumentThatCannotBeCheckedLeavesEverythingAsItIs() {
+        begun()
+        store.rename("Old.md", "New.md")
+        store.folder.setExecutable(false)  // its files' attributes cannot be read
+        try {
+            assertNull(journal.recover(store, recovery, Recents(recentsFile)))
+            assertTrue(journalFile.exists())
+        } finally {
+            store.folder.setExecutable(true)
+        }
+        assertEquals(Kept("kept", 7), recovery.read("Old.md"))
+        assertEquals(listOf("a.md", "Old.md"), Recents(recentsFile).names())
+        recoverTwice()
+        assertFinished()
+    }
+
+    /** Vibe, NEW-B3: begin never records a time it could not read; the rename is refused before anything moves. */
+    @Test fun beginRefusesWhenTheTimeCannotBeRead() {
+        store.write("Old.md", "on disk")
+        store.folder.setExecutable(false)
+        try {
+            assertThrows(StoreError.Io::class.java) { journal.begin("Old.md", "New.md", store.file("Old.md")) }
+        } finally {
+            store.folder.setExecutable(true)
+        }
+        assertFalse(journalFile.exists())
+        assertThrows(StoreError.NotFound::class.java) { journal.begin("None.md", "New.md", store.file("None.md")) }
+        assertFalse(journalFile.exists())
     }
 }
