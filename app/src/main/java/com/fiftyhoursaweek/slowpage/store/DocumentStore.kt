@@ -8,6 +8,8 @@ import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
+import java.nio.file.FileAlreadyExistsException
+import java.nio.file.Files
 
 /** One document in app storage. */
 data class DocumentEntry(val name: String, val bytes: Long, val modified: Long)
@@ -17,6 +19,8 @@ sealed class StoreError(message: String) : Exception(message) {
     class TooLarge(val limitBytes: Long) :
         StoreError("The file is larger than ${limitBytes / (1024 * 1024)} MiB.")
     class NotFound(val name: String) : StoreError("“$name” no longer exists.")
+    /** The iPad's `RenameError.exists`: [name] without its extension. */
+    class Exists(val name: String) : StoreError("A document named “$name” already exists here.")
     class Io(cause: IOException) : StoreError(cause.message ?: cause.toString())
 }
 
@@ -78,6 +82,33 @@ class DocumentStore(val folder: File, val limitBytes: Long) {
         if (!f.isFile) return false
         if (!f.delete()) throw StoreError.Io(IOException("cannot delete $name"))
         true
+    }
+
+    /**
+     * Rename [old] to [new] (R1, the iPad's `DocumentRename.move`): never over another file, and
+     * a failure changes nothing. The same name is no change; a change of case only is allowed
+     * where the file system finds the document itself under the new name. Under the lock, as a
+     * create is, so a name found free stays free until the move.
+     */
+    fun rename(old: String, new: String): String = synchronized(lock) {
+        if (new == old) return old
+        val from = file(old)
+        if (!from.isFile) throw StoreError.NotFound(old)
+        val to = file(new)
+        if (to.exists()) {
+            if (!Files.isSameFile(from.toPath(), to.toPath())) throw StoreError.Exists(Names.split(new).first)
+            if (!from.renameTo(to)) throw StoreError.Io(IOException("cannot rename $old"))
+            return new
+        }
+        try {
+            // Without REPLACE_EXISTING: a file there fails the move, never replaced.
+            Files.move(from.toPath(), to.toPath())
+        } catch (_: FileAlreadyExistsException) {
+            throw StoreError.Exists(Names.split(new).first)
+        } catch (e: IOException) {
+            throw StoreError.Io(e)
+        }
+        new
     }
 
     /**

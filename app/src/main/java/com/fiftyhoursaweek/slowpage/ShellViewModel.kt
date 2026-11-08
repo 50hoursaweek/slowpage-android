@@ -29,6 +29,7 @@ import com.fiftyhoursaweek.slowpage.preview.RenderedPreview
 import com.fiftyhoursaweek.slowpage.ui.Faces
 import com.fiftyhoursaweek.slowpage.store.DocumentEntry
 import com.fiftyhoursaweek.slowpage.store.Kept
+import com.fiftyhoursaweek.slowpage.store.NameException
 import com.fiftyhoursaweek.slowpage.store.Names
 import com.fiftyhoursaweek.slowpage.store.Recovery
 import com.fiftyhoursaweek.slowpage.store.StateFile
@@ -356,6 +357,65 @@ class ShellViewModel(application: Application, private val saved: SavedStateHand
                     refresh()
                 },
             )
+        }
+    }
+
+    /**
+     * Rename… (R1, the iPad's `DocumentRename`), from the start screen's ⋯ menu or the editor's
+     * Menu: [input] checked as the iPad checks it, the document's extension kept; the same name
+     * is no change. The open document is saved first and nothing moves unless that worked, and
+     * no save writes to the old name after the move. Recent, the kept text and the saved state
+     * follow the new name. From the start screen no document is open (one at a time, L3).
+     */
+    fun rename(name: String, input: String) {
+        val s = session?.takeIf { it.name == name }
+        // The iPad's wording: an alert on the start screen, a notice in the editor.
+        val failed = if (s != null) "Couldn't rename:" else "Couldn't rename ${Names.split(name).first}:"
+        val new = try {
+            Names.validated(input, Names.split(name).second)
+        } catch (e: NameException) {
+            notice = "$failed ${e.message}"
+            return
+        }
+        if (new == name) return
+        if (s != null && closing) {
+            notice = "$failed The document cannot be renamed right now."
+            return
+        }
+        viewModelScope.launch {
+            val result = withContext(io) {
+                runCatching {
+                    // Recent follows in the same step on the store's lane: a refresh in between
+                    // would drop the old name, its file gone, and leave no entry to rename.
+                    val move = { old: String ->
+                        store.rename(old, new)
+                        recovery.rename(old, new)
+                        recentList.renamed(old, new)
+                    }
+                    if (s == null) {
+                        move(name)
+                        null
+                    } else {
+                        s.rename(new, move)?.also { keepFiles(s, it) }
+                    }
+                }
+            }
+            val refused = result.fold(
+                onSuccess = { notSaved -> notSaved?.let { "The text could not be saved first: ${it.reason}" } },
+                onFailure = ::describe,
+            )
+            if (refused != null) {
+                if (s != null) updateStatus()
+                notice = "$failed $refused"
+                refresh()
+                return@launch
+            }
+            if (s != null && session === s) {
+                screen = Screen.Editor(new)
+                saved[OPEN_KEY] = new
+                notice = "Renamed to ${Names.split(new).first}"
+            }
+            persistRecents()
         }
     }
 

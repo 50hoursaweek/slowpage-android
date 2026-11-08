@@ -83,7 +83,7 @@ class ImmersiveTest {
                 when (val screen = vm.screen) {
                     Screen.Start -> StartScreen(
                         documents = vm.documents, recent = vm.recent, problems = vm.problems,
-                        onNew = vm::newDocument, onImport = {}, onOpen = vm::open, onExport = {}, onDelete = vm::delete,
+                        onNew = vm::newDocument, onImport = {}, onOpen = vm::open, onRename = vm::rename, onExport = {}, onDelete = vm::delete,
                     )
                     is Screen.Editor -> EditorScreen(vm, screen.name, vm.status, onExport = {}, onImport = {})
                 }
@@ -107,6 +107,12 @@ class ImmersiveTest {
         compose.waitForIdle()
         assertEquals("the menu", 1, popups())
         assertAllFullScreen("the editor and its menu")
+        compose.onNodeWithText("Rename…").performClick()
+        compose.waitForIdle()
+        assertEquals("Rename from the editor", 1, dialogs())
+        assertAllFullScreen("the editor and Rename")
+        compose.onNodeWithText("Cancel").performClick()
+        compose.waitForIdle()
         vm.menuOpen = false
         vm.showDialog(Dialog.APPEARANCE)
         compose.waitForIdle()
@@ -136,6 +142,14 @@ class ImmersiveTest {
         compose.waitForIdle()
         assertEquals("the ⋯ menu", before + 1, popups())
         assertAllFullScreen("the start screen and a document's ⋯ menu")
+        compose.onNodeWithText("Rename…").performClick()
+        compose.waitForIdle()
+        assertEquals("Rename from the start screen", 1, dialogs())
+        assertAllFullScreen("Rename from the start screen")
+        compose.onNodeWithText("Cancel").performClick()
+        compose.waitForIdle()
+        compose.onAllNodesWithText("⋯")[0].performClick()
+        compose.waitForIdle()
         compose.onNodeWithText("Delete…").performClick()
         compose.waitForIdle()
         assertEquals("the delete confirmation", 1, dialogs())

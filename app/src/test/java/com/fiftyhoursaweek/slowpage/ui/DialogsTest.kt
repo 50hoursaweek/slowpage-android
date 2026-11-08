@@ -202,12 +202,12 @@ class DialogsTest {
         for (gone in listOf("Import music…", "Music: Rain", "Typing sound")) compose.onAllNodes(hasText(gone, substring = true)).assertCountEquals(0)
         // Exactly the file items, Undo and Redo, the two pop-ups, Welcome and About, in this order:
         // theme, font, view, spotlight, anchor and text size live only in Appearance, on the
-        // status line and on the keyboard (Francesco's install test).
+        // status line and on the keyboard (Francesco's install test). Rename… is new in 1.0.1.
         val items = compose.onAllNodes(hasAnyAncestor(isPopup()) and hasClickAction()).fetchSemanticsNodes()
             .sortedBy { it.positionInRoot.y }
             .map { node -> node.config[SemanticsProperties.Text].joinToString { it.text } }
         assertEquals(
-            listOf("New", "Import…", "Export…", "Close", "Undo", "Redo", "Appearance…", "Sound and music…", "Welcome…", "About Slowpage…"),
+            listOf("New", "Import…", "Rename…", "Export…", "Close", "Undo", "Redo", "Appearance…", "Sound and music…", "Welcome…", "About Slowpage…"),
             items,
         )
         compose.onNodeWithText("Sound and music…").performClick()

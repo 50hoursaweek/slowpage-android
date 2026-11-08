@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
                             onNew = vm::newDocument,
                             onImport = ::startImport,
                             onOpen = vm::open,
+                            onRename = vm::rename,
                             onExport = ::startExport,
                             onDelete = vm::delete,
                         )

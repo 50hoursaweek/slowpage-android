@@ -41,4 +41,15 @@ class RecoveryTest {
         assertEquals(text, Recovery.unpack(Recovery.pack(text)))
         assertNull(Recovery.unpack(byteArrayOf(1, 2, 3)))
     }
+
+    @Test fun aRenamedDocumentTakesItsKeptTextAlongAndAStaleCopyUnderTheNewNameGoes() {
+        val r = recovery
+        assertNull(r.write("old.md", "kept", stamp = 7))
+        assertNull(r.write("new.md", "stale, from a deleted document", stamp = 3))
+        r.rename("old.md", "new.md")
+        assertEquals(Kept("kept", 7), r.read("new.md"))
+        assertNull(r.read("old.md"))
+        r.rename("none.md", "other.md")  // nothing kept: nothing to do
+        assertNull(r.read("other.md"))
+    }
 }

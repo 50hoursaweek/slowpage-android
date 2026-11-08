@@ -22,6 +22,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
+import com.fiftyhoursaweek.slowpage.store.Recents
 import com.fiftyhoursaweek.slowpage.store.Recovery
 import com.fiftyhoursaweek.slowpage.audio.AudioController
 import com.fiftyhoursaweek.slowpage.audio.AudioControllerTest
@@ -637,6 +638,118 @@ class ShellViewModelTest {
     }
 
     // ---- helpers
+
+    // ---- Rename (R1, 1.0.1)
+
+    @Test fun renamingTheOpenDocumentSavesItFirstAndEverythingFollowsTheNewName() {
+        val handle = SavedStateHandle()
+        val vm = create(handle)
+        val name = openNew(vm)
+        assertTrue(vm.accept("Typed before the rename"))  // not saved yet: the autosave waits
+        vm.rename(name, "  Letter.md ")  // the extension typed too: not doubled
+        until("the editor names the new file") { vm.screen == Screen.Editor("Letter.md") }
+        assertEquals("Renamed to Letter", vm.notice)
+        assertEquals("Typed before the rename", app.store.read("Letter.md"))
+        assertFalse(app.store.exists(name))
+        until("Recent names it, and not the old name") { vm.recent == listOf("Letter.md") }
+        assertEquals(listOf("Letter.md"), Recents(File(app.filesDir, "recents")).names())
+
+        // Later text goes to the new name; nothing writes the old one again.
+        assertTrue(vm.accept("Typed after the rename"))
+        until("autosaved under the new name") { app.store.read("Letter.md") == "Typed after the rename" }
+        assertTrue(vm.accept("Typed last"))
+        vm.saveNow()  // onStop
+        assertEquals("Typed last", app.store.read("Letter.md"))
+        assertFalse(app.store.exists(name))
+
+        // A failed save keeps the text under the new name, and process death reopens the new name.
+        assertTrue(vm.accept("Kept under the new name"))
+        writable(app.store.folder, false)
+        vm.saveNow()
+        assertEquals("Kept under the new name", app.recovery.read("Letter.md")?.text)
+        assertFalse(app.recovery.has(name))
+        processDeath(vm)
+        writable(app.store.folder, true)
+        val again = create(restored(handle))
+        until("reopened under the new name, with the kept text") {
+            again.screen == Screen.Editor("Letter.md") && again.editorText() == "Kept under the new name"
+        }
+        assertFalse(app.store.exists(name))
+    }
+
+    @Test fun aRefusedNameChangesNothingAndTheSameNameIsNoChange() {
+        val vm = create(SavedStateHandle())
+        val name = openNew(vm)
+        app.store.write("Taken.md", "other")
+        val refusals = listOf(
+            "" to "The name is empty.",
+            "   " to "The name is empty.",
+            ".md" to "The name is empty.",
+            "a/b" to "A name cannot contain “/” or “:”.",
+            "a:b" to "A name cannot contain “/” or “:”.",
+            ".hidden" to "A name cannot start with a dot.",
+            "x".repeat(260) to "The name is too long.",
+            "Taken" to "A document named “Taken” already exists here.",
+            "Taken.md" to "A document named “Taken” already exists here.",
+        )
+        for ((input, said) in refusals) {
+            vm.notice = null
+            vm.rename(name, input)
+            until("refused: $input") { vm.notice != null }
+            assertEquals("Couldn't rename: $said", vm.notice)
+            assertEquals(Screen.Editor(name), vm.screen)
+        }
+        assertEquals("other", app.store.read("Taken.md"))
+        assertTrue(app.store.exists(name))
+        vm.notice = null
+        vm.rename(name, name.removeSuffix(".md"))  // the same name: nothing happens, nothing said
+        settle()
+        assertNull(vm.notice)
+        assertEquals(Screen.Editor(name), vm.screen)
+        assertTrue(app.store.exists(name))
+    }
+
+    @Test fun whenTheTextCannotBeSavedFirstNothingIsRenamed() {
+        val vm = create(SavedStateHandle())
+        val name = openNew(vm)
+        assertTrue(vm.accept("Unsaved"))
+        writable(app.store.folder, false)
+        vm.rename(name, "Letter")
+        until("refused") { vm.notice != null }
+        assertTrue(vm.notice!!, vm.notice!!.startsWith("Couldn't rename: The text could not be saved first: "))
+        assertEquals(Screen.Editor(name), vm.screen)
+        assertTrue(vm.status, vm.status.startsWith("Not saved"))
+        assertTrue(app.store.exists(name))
+        assertFalse(app.store.exists("Letter.md"))
+        assertEquals("Unsaved", app.recovery.read(name)?.text)  // kept, as after any failed save
+        writable(app.store.folder, true)
+        until("saved under its own name once the disk takes it") { vm.closeEditor(); vm.screen == Screen.Start }
+        assertEquals("Unsaved", app.store.read(name))
+    }
+
+    @Test fun renamingFromTheStartScreenMovesTheDocumentItsRecentPlaceAndItsKeptText() {
+        val vm = create(SavedStateHandle())
+        settle()
+        for (n in listOf("a.md", "b.md", "c.md")) app.store.write(n, n)
+        listOf("c.md", "b.md", "a.md").forEach(app.recents::add)
+        assertNull(app.recovery.write("b.md", "kept", stamp = 1))
+        vm.rename("b.md", "Bee")
+        until("Recent has the new name in the old one's place") { vm.recent == listOf("a.md", "Bee.md", "c.md") }
+        assertEquals(listOf("a.md", "Bee.md", "c.md"), Recents(File(app.filesDir, "recents")).names())
+        assertEquals("b.md", app.store.read("Bee.md"))
+        assertFalse(app.store.exists("b.md"))
+        assertEquals("kept", app.recovery.read("Bee.md")?.text)
+        assertFalse(app.recovery.has("b.md"))
+        assertTrue(vm.documents.any { it.name == "Bee.md" } && vm.documents.none { it.name == "b.md" })
+        assertNull(vm.notice)  // as on the iPad: nothing to say when it worked
+        assertEquals(Screen.Start, vm.screen)
+
+        vm.rename("a.md", "c")
+        until("refused") { vm.notice != null }
+        assertEquals("Couldn't rename a: A document named “c” already exists here.", vm.notice)
+        assertEquals("a.md", app.store.read("a.md"))
+        assertEquals("c.md", app.store.read("c.md"))
+    }
 
     private fun create(handle: SavedStateHandle): ShellViewModel {
         val store = ViewModelStore().also { stores += it }

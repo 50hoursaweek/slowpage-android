@@ -124,4 +124,39 @@ class DocumentStoreTest {
         assertTrue(runCatching { store.export(name, broken) }.exceptionOrNull() is StoreError.Io)
         assertEquals("keep", store.read(name))
     }
+
+    // ---- Rename (R1, 1.0.1)
+
+    @Test fun renameMovesTheTextToTheNewNameAndLeavesNothingBehind() {
+        val name = store.createUntitled()
+        store.write(name, "words")
+        assertEquals("Notes.md", store.rename(name, "Notes.md"))
+        assertEquals("words", store.read("Notes.md"))
+        assertFalse(store.exists(name))
+        assertEquals(listOf("Notes.md"), store.folder.list()!!.toList())
+    }
+
+    @Test fun renameNeverGoesOverAnotherDocument() {
+        store.write("a.md", "A")
+        store.write("b.md", "B")
+        val refused = runCatching { store.rename("a.md", "b.md") }.exceptionOrNull()
+        assertTrue(refused is StoreError.Exists)
+        assertEquals("A document named “b” already exists here.", refused!!.message)
+        assertEquals("A", store.read("a.md"))
+        assertEquals("B", store.read("b.md"))
+    }
+
+    @Test fun renameToTheSameNameChangesNothingAndAMissingDocumentIsSaid() {
+        store.write("a.md", "A")
+        assertEquals("a.md", store.rename("a.md", "a.md"))
+        assertEquals("A", store.read("a.md"))
+        assertTrue(runCatching { store.rename("gone.md", "x.md") }.exceptionOrNull() is StoreError.NotFound)
+        assertFalse(store.exists("x.md"))
+    }
+
+    @Test fun aChangeOfCaseIsARename() {
+        store.write("notes.md", "n")
+        assertEquals("Notes.md", store.rename("notes.md", "Notes.md"))
+        assertEquals(listOf("Notes.md"), store.folder.list()!!.toList())
+    }
 }

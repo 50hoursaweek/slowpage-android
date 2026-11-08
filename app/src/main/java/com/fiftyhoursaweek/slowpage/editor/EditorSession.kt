@@ -17,11 +17,15 @@ import uniffi.hushhour.TextChange
  * onStop's synchronous save waits for an autosave in flight.
  */
 class EditorSession private constructor(
-    val name: String,
+    name: String,
     private val store: DocumentStore,
     private val document: Document,
 ) : AutoCloseable {
     private val saveLock = Any()
+
+    /** The document's name in the store; a [rename] changes it, under the save lock. */
+    @Volatile var name: String = name
+        private set
 
     /** Held while the document is used off the main thread or closed, so a late job never reaches a closed one. */
     private val closeLock = Any()
@@ -107,6 +111,19 @@ class EditorSession private constructor(
             document.saveFailed(request.generation, e.message ?: e.toString())
         }
         document.persistence()
+    }
+
+    /**
+     * Rename the document to [new] (R1, the iPad's `TextDocument.rename`): the unsaved text is
+     * saved first, and nothing moves unless that worked; [move] then moves the file from the old
+     * name. Saves wait meanwhile (the save lock), so none writes to the old name after the move.
+     * Blocking. Returns the failed save (nothing moved), else null; [move] throws to refuse.
+     */
+    fun rename(new: String, move: (old: String) -> Unit): Persistence.Failed? = synchronized(saveLock) {
+        (save() as? Persistence.Failed)?.let { return it }
+        move(name)
+        name = new
+        null
     }
 
     fun limitMiB() = document.sizeLimit().toLong() / (1024 * 1024)

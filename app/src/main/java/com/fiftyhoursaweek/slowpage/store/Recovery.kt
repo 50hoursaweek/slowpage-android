@@ -55,6 +55,16 @@ class Recovery(val folder: File, private val limitBytes: Long) {
 
     fun has(name: String) = file(name).isFile
 
+    /**
+     * The document [old] is [new] now (R1): its kept text follows it. A copy under [new] has no
+     * document (a rename never goes over one), so it is dropped first. Best effort, as [clear].
+     */
+    fun rename(old: String, new: String) {
+        if (new == old) return
+        file(new).delete()
+        if (has(old)) file(old).renameTo(file(new))
+    }
+
     /** Remove temporary files a killed write left behind (Codex round 2, MINOR 2). */
     fun removeLeftovers() {
         folder.listFiles().orEmpty()

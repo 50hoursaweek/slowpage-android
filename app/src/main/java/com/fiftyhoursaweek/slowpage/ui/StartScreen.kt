@@ -40,10 +40,12 @@ fun StartScreen(
     onNew: () -> Unit,
     onImport: () -> Unit,
     onOpen: (String) -> Unit,
+    onRename: (String, String) -> Unit,
     onExport: (String) -> Unit,
     onDelete: (String) -> Unit,
 ) {
     var confirmDelete by remember { mutableStateOf<String?>(null) }
+    var renaming by remember { mutableStateOf<String?>(null) }
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(Modifier.widthIn(max = 760.dp).fillMaxWidth().padding(horizontal = 24.dp)) {
             item {
@@ -76,11 +78,18 @@ fun StartScreen(
                 }
             }
             items(documents, key = { "doc/${it.name}" }) { doc ->
-                DocumentRow(doc, onOpen = { onOpen(doc.name) }, onExport = { onExport(doc.name) }, onDelete = { confirmDelete = doc.name })
+                DocumentRow(
+                    doc,
+                    onOpen = { onOpen(doc.name) },
+                    onRename = { renaming = doc.name },
+                    onExport = { onExport(doc.name) },
+                    onDelete = { confirmDelete = doc.name },
+                )
                 HorizontalDivider()
             }
         }
     }
+    renaming?.let { name -> RenameDialog(name, onRename = { onRename(name, it) }, onDismiss = { renaming = null }) }
     confirmDelete?.let { name ->
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
@@ -107,7 +116,7 @@ private fun Heading(text: String) {
 }
 
 @Composable
-private fun DocumentRow(doc: DocumentEntry, onOpen: () -> Unit, onExport: () -> Unit, onDelete: () -> Unit) {
+private fun DocumentRow(doc: DocumentEntry, onOpen: () -> Unit, onRename: () -> Unit, onExport: () -> Unit, onDelete: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -122,6 +131,7 @@ private fun DocumentRow(doc: DocumentEntry, onOpen: () -> Unit, onExport: () -> 
             TextButton(onClick = { menu = true }) { Text("⋯") }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 ImmersiveWindow()
+                DropdownMenuItem(text = { Text("Rename…") }, onClick = { menu = false; onRename() })
                 DropdownMenuItem(text = { Text("Export…") }, onClick = { menu = false; onExport() })
                 DropdownMenuItem(text = { Text("Delete…") }, onClick = { menu = false; onDelete() })
             }

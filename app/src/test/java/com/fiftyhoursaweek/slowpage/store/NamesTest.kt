@@ -53,4 +53,12 @@ class NamesTest {
         val (base, ext) = Names.forImport("Two\r\nlines\tand\u0085more.md")
         assertEquals("Two--lines-and-more" to "md", base to ext)
     }
+
+    @Test fun renameKeepsTheDocumentsOwnExtension() {
+        // R1: the extension of the document being renamed, not always .md (an imported .txt).
+        assertEquals("Notes.txt", Names.validated("Notes", "txt"))
+        assertEquals("Notes.txt", Names.validated(" Notes.TXT ", "txt"))
+        assertEquals("Notes.md.txt", Names.validated("Notes.md", "txt"))
+        assertEquals(NameProblem.EMPTY, runCatching { Names.validated(" .txt", "txt") }.exceptionOrNull().let { (it as NameException).problem })
+    }
 }

@@ -41,13 +41,15 @@ class Recents(private val file: File) {
         while (names.size > LIMIT) names.removeAt(names.size - 1)
     }
 
-    /** [old] was renamed to [new]: the entry names [new] in the same place (first when [old] was not listed). */
+    /**
+     * [old] was renamed to [new]: the entry names [new] in the same place. A document not in the
+     * list stays out of it (Rename… from the start screen's list is not an open); an entry
+     * already naming [new] (its document gone) is dropped either way.
+     */
     fun renamed(old: String, new: String) {
-        val index = names.indexOf(old).takeIf { it >= 0 } ?: names.indexOf(new).takeIf { it >= 0 } ?: 0
-        names.remove(old)
+        val index = names.indexOf(old)
         names.remove(new)
-        names.add(minOf(index, names.size), new)
-        while (names.size > LIMIT) names.removeAt(names.size - 1)
+        if (index >= 0 && isPlausible(new)) names[names.indexOf(old)] = new else names.remove(old)
     }
 
     fun remove(name: String) {

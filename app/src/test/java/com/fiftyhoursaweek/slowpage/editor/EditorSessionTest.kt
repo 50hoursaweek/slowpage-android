@@ -1,5 +1,6 @@
 package com.fiftyhoursaweek.slowpage.editor
 
+import com.fiftyhoursaweek.slowpage.store.StoreError
 import com.fiftyhoursaweek.slowpage.store.DocumentStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -136,6 +137,54 @@ class EditorSessionTest {
             assertEquals(s.coreText(), s.text)
             s.save()
             assertEquals(current, store.read(name))
+        }
+    }
+
+    // ---- Rename (R1, 1.0.1)
+
+    @Test fun renameSavesTheUnsavedTextFirstAndLaterSavesGoToTheNewName() {
+        val name = store.createUntitled()
+        EditorSession.open(store, name).use { s ->
+            assertTrue(s.change("Not saved yet") is EditorSession.Change.Applied)
+            val moved = mutableListOf<String>()
+            assertEquals(null, s.rename("Notes.md") { old -> moved += old; store.rename(old, "Notes.md") })
+            assertEquals(listOf(name), moved)
+            assertEquals("Notes.md", s.name)
+            assertEquals("Not saved yet", store.read("Notes.md"))
+            assertTrue(s.change("Not saved yet, and more") is EditorSession.Change.Applied)
+            s.save()
+            assertEquals("Not saved yet, and more", store.read("Notes.md"))
+            assertFalse(store.exists(name))
+        }
+    }
+
+    @Test fun whenTheSaveFailsNothingMoves() {
+        val name = store.createUntitled()
+        EditorSession.open(store, name).use { s ->
+            assertTrue(s.change("Unsaved") is EditorSession.Change.Applied)
+            store.folder.setWritable(false)
+            try {
+                var moved = false
+                val failed = s.rename("Notes.md") { moved = true }
+                assertTrue(failed is Persistence.Failed)
+                assertFalse(moved)
+                assertEquals(name, s.name)
+            } finally {
+                store.folder.setWritable(true)
+            }
+            assertEquals("Unsaved", s.text)
+            assertTrue(s.isDirty())
+        }
+    }
+
+    @Test fun aRefusedMoveKeepsTheName() {
+        val name = store.createUntitled()
+        store.write("Taken.md", "other")
+        EditorSession.open(store, name).use { s ->
+            val refused = runCatching { s.rename("Taken.md") { old -> store.rename(old, "Taken.md") } }.exceptionOrNull()
+            assertTrue(refused is StoreError.Exists)
+            assertEquals(name, s.name)
+            assertEquals("other", store.read("Taken.md"))
         }
     }
 }

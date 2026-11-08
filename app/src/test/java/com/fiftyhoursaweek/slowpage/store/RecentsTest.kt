@@ -60,8 +60,12 @@ class RecentsTest {
         listOf("c.md", "b.md", "a.md").forEach(recents::add)
         recents.renamed("b.md", "B2.md")
         assertEquals(listOf("a.md", "B2.md", "c.md"), recents.names())
+        // Not listed: renamed from the start screen's list, it is not added.
         recents.renamed("unlisted.md", "new.md")
-        assertEquals("new.md", recents.names().first())
+        assertEquals(listOf("a.md", "B2.md", "c.md"), recents.names())
+        // An entry already under the new name (its document gone) is not doubled.
+        recents.renamed("a.md", "c.md")
+        assertEquals(listOf("c.md", "B2.md"), recents.names())
     }
 
     @Test fun aPersistFailureIsReturned() {

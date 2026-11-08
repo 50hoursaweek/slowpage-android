@@ -32,7 +32,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -298,15 +300,17 @@ private fun TopLine(vm: ShellViewModel, name: String, status: String, onExport: 
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.widthIn(max = 320.dp),
         )
+        var renaming by remember { mutableStateOf(false) }
         Box {
             TextButton(onClick = { vm.menuOpen = true }, modifier = Modifier.testTag(MENU_TAG)) { Text("Menu") }
-            EditorMenu(vm, onExport, onImport)
+            EditorMenu(vm, onRename = { renaming = true }, onExport, onImport)
         }
+        if (renaming) RenameDialog(name, onRename = { vm.rename(name, it) }, onDismiss = { renaming = false })
     }
 }
 
 @Composable
-private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () -> Unit) {
+private fun EditorMenu(vm: ShellViewModel, onRename: () -> Unit, onExport: () -> Unit, onImport: () -> Unit) {
     fun run(action: () -> Unit) = { vm.menuOpen = false; action() }
     @Composable fun item(label: String, enabled: Boolean = true, action: () -> Unit) =
         DropdownMenuItem(text = { Text(label) }, onClick = run(action), enabled = enabled)
@@ -314,6 +318,8 @@ private fun EditorMenu(vm: ShellViewModel, onExport: () -> Unit, onImport: () ->
         ImmersiveWindow()
         item("New") { vm.command(Command.NEW) }
         item("Import…") { onImport() }
+        // After New and Open, as on the iPad's ☰ menu (Francesco, 1.0.1).
+        item("Rename…") { onRename() }
         item("Export…") { onExport() }
         item("Close") { vm.command(Command.CLOSE) }
         HorizontalDivider()
